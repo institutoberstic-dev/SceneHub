@@ -7,4 +7,12 @@ use Illuminate\Support\Facades\Route;
 //     return view('welcome');
 // });
 
-Route::get('/data-random',[DataRandomController::class,'data_random']);
+Route::get('/firebase/test', function () {
+    $database = app('firebase.database');
+    $database->getReference('test_connection')->set([
+        'mensaje' => 'UnityTracker conectado correctamente 🔥',
+        'fecha' => now()->toDateTimeString(),
+    ]);
+    return response()->json(['status' => 'ok']);
+});
+

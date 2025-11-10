@@ -14,16 +14,14 @@ class DataRandomController extends Controller
     {
         $location = $request->all();
         try {
-            $data = Location::create($location);
+            Location::create($location);
+            $data = $location;
             $message = 'Coordenada recibida correctamente';
         } catch (\Throwable $th) {
-            $data = $th;
+            $data = [$th];
             $message = 'error';
         }
 
-        return response()->json([
-            'message' => $message,
-            'data' => $data,
-        ]);
+        Log::alert($message, $data);
     }
 }
