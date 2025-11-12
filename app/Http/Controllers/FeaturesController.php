@@ -25,9 +25,27 @@ class FeaturesController extends Controller
 
         $data = [];
 
+        $datos = json_decode($features['data_features'])->features;
+
+        $datos = [
+            'corriente' => number_format((float) $datos[0], 5, '.',''),
+            'temperatura' => number_format((float) $datos[1], 5, '.',''),
+            'presion' => number_format((float) $datos[2], 5, '.',''),
+            'eficiencia' => number_format((float) $datos[3], 5, '.',''),
+            'voltajeTotal' => number_format((float) $datos[4], 5, '.',''),
+            'produccionHidrogeno' => number_format((float) $datos[5], 5, '.',''),
+            'temperaturaAmbiente' => number_format((float) $datos[6], 5, '.',''),
+            'coefConvectivo' => number_format((float) $datos[7], 5, '.',''),
+            'resistenciaInterna' => number_format((float) $datos[8], 5, '.',''),
+            'numCeldas' => (int) $datos[9]
+        ];
+
+        Log::alert("to send", $datos);
+
         try {
-            Features::create($features);
-            $data = $features;
+
+            Features::create($datos);
+            $data = $datos;
             $message = 'success';
         } catch (\Throwable $th) {
             $data = [$th];
@@ -35,7 +53,6 @@ class FeaturesController extends Controller
         }
 
         Log::alert($message, $data);
-        // return;
     }
 
     /**
