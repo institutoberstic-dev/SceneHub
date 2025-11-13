@@ -33,7 +33,7 @@ class FeaturesController extends Controller
             'presion' => number_format((float) $datos[2], 5, '.',''),
             'eficiencia' => number_format((float) $datos[3], 5, '.',''),
             'voltajeTotal' => number_format((float) $datos[4], 5, '.',''),
-            'produccionHidrogeno' => number_format((float) $datos[5], 5, '.',''),
+            'produccionHidrogeno' => number_format((float) $datos[5], 10, '.',''),
             'temperaturaAmbiente' => number_format((float) $datos[6], 5, '.',''),
             'coefConvectivo' => number_format((float) $datos[7], 5, '.',''),
             'resistenciaInterna' => number_format((float) $datos[8], 5, '.',''),

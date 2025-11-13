@@ -18,7 +18,7 @@ return new class extends Migration
             $table->decimal('presion', 10,5);
             $table->decimal('eficiencia', 10,5);
             $table->decimal('voltajeTotal', 10,5);
-            $table->decimal('produccionHidrogeno', 10,5);
+            $table->decimal('produccionHidrogeno', 10,6);
             $table->decimal('temperaturaAmbiente', 10,5);
             $table->decimal('coefConvectivo', 10,5);
             $table->decimal('resistenciaInterna', 10,5);
