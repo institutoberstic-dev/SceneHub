@@ -9,4 +9,4 @@ use Illuminate\Support\Facades\Route;
 // Route::post('/new-location',[DataRandomController::class,'store']);
 Route::post('/new-location',[CoordinateController::class,'store']);
 Route::post('/send-features',[FeaturesController::class,'store']);
-Route::get('test/api/',[FeaturesController::class,'destroy']);
+Route::get('/test/api/',[FeaturesController::class,'destroy']);
