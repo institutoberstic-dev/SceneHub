@@ -13,7 +13,9 @@ class FeaturesController extends Controller
      */
     public function index()
     {
-        //
+        $features = Features::all();
+        dd($features);
+        return view('prueba',compact('features'));
     }
 
     /**
