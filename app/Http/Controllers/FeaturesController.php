@@ -79,6 +79,6 @@ class FeaturesController extends Controller
      */
     public function destroy(Features $features)
     {
-        //
+        Log::alert("Log get", []);
     }
 }
