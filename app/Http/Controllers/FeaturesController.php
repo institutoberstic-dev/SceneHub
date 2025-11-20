@@ -21,26 +21,27 @@ class FeaturesController extends Controller
      */
     public function store(Request $request)
     {
-        $features = $request->all();
+        $data = $request->all();
 
-        $data = [];
+        $features = $request->input('features');
 
-        $datos = json_decode($features['data_features'])->features;
+        // $datos = json_decode($features['data_features'])->features;
+
+        Log::alert('to send:', $data);
 
         $datos = [
-            'corriente' => number_format((float) $datos[0], 5, '.',''),
-            'temperatura' => number_format((float) $datos[1], 5, '.',''),
-            'presion' => number_format((float) $datos[2], 5, '.',''),
-            'eficiencia' => number_format((float) $datos[3], 5, '.',''),
-            'voltajeTotal' => number_format((float) $datos[4], 5, '.',''),
-            'produccionHidrogeno' => number_format((float) $datos[5], 10, '.',''),
-            'temperaturaAmbiente' => number_format((float) $datos[6], 5, '.',''),
-            'coefConvectivo' => number_format((float) $datos[7], 5, '.',''),
-            'resistenciaInterna' => number_format((float) $datos[8], 5, '.',''),
-            'numCeldas' => (int) $datos[9]
+            'corriente' => number_format((float) $features[0], 5, '.',''),
+            'temperatura' => number_format((float) $features[1], 5, '.',''),
+            'presion' => number_format((float) $features[2], 5, '.',''),
+            'eficiencia' => number_format((float) $features[3], 5, '.',''),
+            'voltajeTotal' => number_format((float) $features[4], 5, '.',''),
+            'produccionHidrogeno' => number_format((float) $features[5], 10, '.',''),
+            'temperaturaAmbiente' => number_format((float) $features[6], 5, '.',''),
+            'coefConvectivo' => number_format((float) $features[7], 5, '.',''),
+            'resistenciaInterna' => number_format((float) $features[8], 5, '.',''),
+            'numCeldas' => (int) $features[9]
         ];
 
-        Log::alert("to send", $datos);
 
         try {
 
