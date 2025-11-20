@@ -23,39 +23,66 @@ class FeaturesController extends Controller
      */
     public function store(Request $request)
     {
-        $data = $request->all();
+         try {
+            // Obtener todo el contenido JSON
+            $data = $request->all();
 
-        $features = $request->input('features');
+            Log::info('Datos recibidos:', $data);
 
-        // $datos = json_decode($features['data_features'])->features;
+            // Verificar que 'features' existe y es un array
+            if (!isset($data['features']) || !is_array($data['features'])) {
+                Log::error('Features no encontrado o no es array', $data);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'El campo features es requerido y debe ser un array'
+                ], 400);
+            }
 
-        Log::alert('to send:', $data);
+            $features = $data['features'];
 
-        $datos = [
-            'corriente' => number_format((float) $features[0], 5, '.',''),
-            'temperatura' => number_format((float) $features[1], 5, '.',''),
-            'presion' => number_format((float) $features[2], 5, '.',''),
-            'eficiencia' => number_format((float) $features[3], 5, '.',''),
-            'voltajeTotal' => number_format((float) $features[4], 5, '.',''),
-            'produccionHidrogeno' => number_format((float) $features[5], 10, '.',''),
-            'temperaturaAmbiente' => number_format((float) $features[6], 5, '.',''),
-            'coefConvectivo' => number_format((float) $features[7], 5, '.',''),
-            'resistenciaInterna' => number_format((float) $features[8], 5, '.',''),
-            'numCeldas' => (int) $features[9]
-        ];
+            // Verificar que tiene suficientes elementos
+            if (count($features) < 10) {
+                Log::error('Features insuficientes', ['count' => count($features)]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Se requieren al menos 10 valores en features'
+                ], 400);
+            }
 
-
-        try {
+            $datos = [
+                'corriente' => number_format((float) $features[0], 5, '.',''),
+                'temperatura' => number_format((float) $features[1], 5, '.',''),
+                'presion' => number_format((float) $features[2], 5, '.',''),
+                'eficiencia' => number_format((float) $features[3], 5, '.',''),
+                'voltajeTotal' => number_format((float) $features[4], 5, '.',''),
+                'produccionHidrogeno' => number_format((float) $features[5], 10, '.',''),
+                'temperaturaAmbiente' => number_format((float) $features[6], 5, '.',''),
+                'coefConvectivo' => number_format((float) $features[7], 5, '.',''),
+                'resistenciaInterna' => number_format((float) $features[8], 5, '.',''),
+                'numCeldas' => (int) $features[9]
+            ];
 
             Features::create($datos);
-            $data = $datos;
-            $message = 'success';
-        } catch (\Throwable $th) {
-            $data = [$th];
-            $message = 'error';
-        }
 
-        Log::alert($message, $data);
+            Log::info('Features guardados exitosamente', $datos);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Datos guardados correctamente',
+                'data' => $datos
+            ], 200);
+
+        } catch (\Throwable $th) {
+            Log::error('Error al guardar features: ' . $th->getMessage(), [
+                'trace' => $th->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al procesar los datos',
+                'error' => $th->getMessage()
+            ], 500);
+        }
     }
 
     /**
