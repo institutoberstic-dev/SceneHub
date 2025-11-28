@@ -23,31 +23,12 @@ class FeaturesController extends Controller
      */
     public function store(Request $request)
     {
-         try {
-            // Obtener todo el contenido JSON
+        try {
             $data = $request->all();
 
             Log::info('Datos recibidos:', $data);
 
-            // Verificar que 'features' existe y es un array
-            if (!isset($data['features']) || !is_array($data['features'])) {
-                Log::error('Features no encontrado o no es array', $data);
-                return response()->json([
-                    'success' => false,
-                    'message' => 'El campo features es requerido y debe ser un array'
-                ], 400);
-            }
-
             $features = $data['features'];
-
-            // Verificar que tiene suficientes elementos
-            if (count($features) < 10) {
-                Log::error('Features insuficientes', ['count' => count($features)]);
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Se requieren al menos 10 valores en features'
-                ], 400);
-            }
 
             $datos = [
                 'corriente' => number_format((float) $features[0], 5, '.',''),
