@@ -1,46 +1,51 @@
+# ===============================
+# Base image: PHP 8.2 FPM Bullseye
+# ===============================
 FROM php:8.2-fpm-bullseye
 
 # ===============================
-# 1️⃣ Dependencias del sistema
+# Dependencias del sistema
 # ===============================
 RUN apt-get update && apt-get install -y \
     git \
     curl \
     unzip \
-    gnupg \
+    gnupg2 \
     ca-certificates \
     unixodbc \
     unixodbc-dev \
     libonig-dev \
     libzip-dev \
     zip \
-    && docker-php-ext-install mbstring zip pdo \
+    libssl-dev \
+    g++ \
+    make \
+    apt-transport-https \
+    && docker-php-ext-install mbstring zip bcmath opcache \
     && apt-get clean
 
 # ===============================
-# 2️⃣ Microsoft ODBC Driver (Bullseye)
+# Microsoft ODBC Driver (Bullseye)
 # ===============================
-RUN curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
-    | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
-    && curl -fsSL https://packages.microsoft.com/config/debian/11/prod.list \
-    | sed 's|deb |deb [signed-by=/usr/share/keyrings/microsoft-prod.gpg] |g' \
-    > /etc/apt/sources.list.d/mssql-release.list \
+RUN curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - \
+    && curl https://packages.microsoft.com/config/debian/11/prod.list \
+       -o /etc/apt/sources.list.d/mssql-release.list \
     && apt-get update \
     && ACCEPT_EULA=Y apt-get install -y msodbcsql18
 
 # ===============================
-# 3️⃣ PHP SQL Server extensions
+#PHP SQL Server extensions
 # ===============================
 RUN pecl install sqlsrv pdo_sqlsrv \
     && docker-php-ext-enable sqlsrv pdo_sqlsrv
 
 # ===============================
-# 4️⃣ Composer
+# Composer
 # ===============================
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 # ===============================
-# 5️⃣ Laravel App
+# Laravel App
 # ===============================
 WORKDIR /var/www
 COPY . .
@@ -49,17 +54,20 @@ RUN chown -R www-data:www-data /var/www \
     && chmod -R 775 storage
 
 # ===============================
-# 6️⃣ PHP deps
+# PHP deps
 # ===============================
-RUN composer install --no-dev --optimize-autoloader
+RUN composer install --no-dev --optimize-autoloader \
+    && composer dump-autoload
 
 # ===============================
-# 7️⃣ Laravel cache
+# Laravel cache
 # ===============================
 RUN php artisan config:clear \
     && php artisan route:clear \
     && php artisan view:clear
 
+# ===============================
+# Expose port and run
+# ===============================
 EXPOSE 8000
-
 CMD ["sh","-c","php artisan serve --host=0.0.0.0 --port=${PORT:-8000}"]
