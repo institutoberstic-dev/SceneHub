@@ -15,7 +15,7 @@ WORKDIR /var/www
 COPY . /app
 
 RUN chown -R www-data:www-data /var/www \
-&& chmod -R 777 storage
+&& chmod -R 775 storage
 
 # Install PHP dependencies
 RUN composer install --no-dev --optimize-autoloader
