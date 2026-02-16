@@ -12,7 +12,7 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 WORKDIR /var/www
 
 # Copy app files
-COPY . /app
+COPY . .
 
 RUN chown -R www-data:www-data /var/www \
 && chmod -R 775 storage
