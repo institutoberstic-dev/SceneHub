@@ -17,12 +17,12 @@ RUN apt-get update && apt-get install -y \
     && docker-php-ext-install mbstring zip pdo \
     && apt-get clean
 
-# ===============================
-# Microsoft ODBC Driver SQL Server
-# ===============================
-RUN curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - \
-    && curl https://packages.microsoft.com/config/debian/12/prod.list \
-       > /etc/apt/sources.list.d/mssql-release.list \
+# Microsoft ODBC Driver for SQL Server (Debian 12)
+RUN curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
+    | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
+    && curl -fsSL https://packages.microsoft.com/config/debian/12/prod.list \
+    | sed 's|deb |deb [signed-by=/usr/share/keyrings/microsoft-prod.gpg] |g' \
+    > /etc/apt/sources.list.d/mssql-release.list \
     && apt-get update \
     && ACCEPT_EULA=Y apt-get install -y msodbcsql18
 
