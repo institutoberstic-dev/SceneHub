@@ -22,7 +22,8 @@ RUN apt-get update && apt-get install -y \
     make \
     apt-transport-https \
     && docker-php-ext-install mbstring zip bcmath opcache \
-    && apt-get clean
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # ===============================
 # Microsoft ODBC Driver (Bullseye)
@@ -31,10 +32,17 @@ RUN curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - \
     && curl https://packages.microsoft.com/config/debian/11/prod.list \
        -o /etc/apt/sources.list.d/mssql-release.list \
     && apt-get update \
-    && ACCEPT_EULA=Y apt-get install -y msodbcsql18
+    && ACCEPT_EULA=Y apt-get install -y msodbcsql18 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # ===============================
-#PHP SQL Server extensions
+# Actualizar PECL (IMPORTANTE)
+# ===============================
+RUN pecl channel-update pecl.php.net
+
+# ===============================
+# PHP SQL Server extensions
 # ===============================
 RUN pecl install sqlsrv pdo_sqlsrv \
     && docker-php-ext-enable sqlsrv pdo_sqlsrv
