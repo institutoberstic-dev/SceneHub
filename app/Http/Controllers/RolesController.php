@@ -50,6 +50,17 @@ class RolesController extends Controller
     public function update(Request $request, Rol $rol)
     {
         //
+        try{
+            $rol->update([
+                'name' => $request->name,
+                'guard_name' => $request->guard_name,
+            ]);
+
+            return response()->json(['message' => 'Rol actualizado exitosamente.'], 200);
+        }
+        catch(\Exception $e){
+            return response()->json(['error' => 'Ha ocurrido un error al actualizar el rol.'], 500);
+        }
     }
 
     /**
