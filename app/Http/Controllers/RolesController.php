@@ -2,8 +2,9 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Rol;
 use Illuminate\Http\Request;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 
 class RolesController extends Controller
 {
@@ -23,7 +24,7 @@ class RolesController extends Controller
     {
         //
         try{
-            Rol::create([
+            Role::create([
                 'name' => $request->name,
                 'guard_name' => $request->guard_name,
             ]);
@@ -38,7 +39,7 @@ class RolesController extends Controller
     /**
      * Display the specified resource.
      */
-    public function show(Rol $rol)
+    public function show(Role $rol)
     {
 
         return view('roles.show', compact('rol'));
@@ -47,7 +48,7 @@ class RolesController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, Rol $rol)
+    public function update(Request $request, Role $rol)
     {
         //
         try{
@@ -66,14 +67,14 @@ class RolesController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(Rol $rol)
+    public function destroy(Role $rol)
     {
         //
     }
 
     public function list()
     {
-        $roles = Rol::all();
+        $roles = Role::all();
         return view('roles.list', compact('roles'));
     }
 }

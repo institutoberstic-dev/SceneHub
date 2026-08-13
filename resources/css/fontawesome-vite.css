@@ -1,0 +1,2 @@
+/* Bridge file to let Vite include the FontAwesome CSS from public */
+@import url('/fontawesome/css/all.min.css');
