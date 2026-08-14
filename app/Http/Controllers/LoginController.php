@@ -2,52 +2,39 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 class LoginController extends Controller
 {
-
     public function log_in()
     {
-        return view('auth.login');
+        return view('app');
     }
 
     public function login(Request $request)
     {
-        $credenciales = $request->only('email','password');
-        if (Auth::attempt($credenciales)) {
-            if (Auth::user()->status == 1) {
-                request()->session()->regenerateToken();
+        $credentials = $request->validate([
+            'email' => ['required', 'email'],
+            'password' => ['required', 'string'],
+        ]);
 
-                return redirect()->intended('/escenarios');
-                // return response()->json([
-                //     'success' => true,
-                //     'message' => 'Login exitoso',
-                //     'user' => [
-                //             'id' => Auth::user()->id,
-                //             'name' => Auth::user()->name,
-                //             'email' => Auth::user()->email,
-                //             'role' => Auth::user()->id_rol_users,
-                //             'roleName' => Auth::user()->rol->name_rol
-                //     ]
-                // ]);
-            }
-
-            Auth::logout();
-
+        if (! Auth::attempt($credentials, $request->boolean('remember'))) {
             return response()->json([
                 'success' => false,
-                'code' => 'USER_DISABLED',
-                'message' => 'Usuario deshabilitado!!'
-            ], 403);
+                'code' => 'INVALID_CREDENTIALS',
+                'message' => 'Usuario y/o contraseña incorrecta.',
+            ], 401);
         }
 
+        $request->session()->regenerate();
+
         return response()->json([
-            'success' => false,
-            'code' => 'INVALID_CREDENTIALS',
-            'message' => 'Usuario y/o contraseña incorrecta.'
-        ], 401);
+            'success' => true,
+            'message' => 'Inicio de sesión exitoso.',
+            'user' => Auth::user()->only(['id', 'name', 'email']),
+            'redirect' => route('dashboard.index'),
+        ]);
     }
 
     public function logout(Request $request)

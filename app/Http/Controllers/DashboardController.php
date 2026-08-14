@@ -11,7 +11,7 @@ class DashboardController extends Controller
      */
     public function index()
     {
-        //
+        return view('app');
     }
 
     /**
@@ -27,7 +27,7 @@ class DashboardController extends Controller
      */
     public function show(string $id)
     {
-        //
+        return view('app');
     }
 
     /**

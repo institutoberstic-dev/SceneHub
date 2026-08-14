@@ -8,14 +8,19 @@ use Illuminate\Support\Facades\Log;
 
 class SimuSolarController extends Controller
 {
-   /**
+    /**
      * Display a listing of the resource.
      */
     public function index()
     {
-        $SimuSolars = SimuSolar::all();
-        dd($SimuSolars);
-        return view('prueba', compact('SimuSolars'));
+        return view('app');
+    }
+
+    public function data()
+    {
+        return response()->json(
+            SimuSolar::query()->latest()->limit(100)->get()
+        );
     }
 
     /**
@@ -54,18 +59,18 @@ class SimuSolarController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Datos guardados correctamente',
-                'data' => $SimuSolar
+                'data' => $SimuSolar,
             ], 200);
 
         } catch (\Throwable $th) {
-            Log::error('Error al guardar SimuSolar: ' . $th->getMessage(), [
-                'trace' => $th->getTraceAsString()
+            Log::error('Error al guardar SimuSolar: '.$th->getMessage(), [
+                'trace' => $th->getTraceAsString(),
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Error al procesar los datos',
-                'error' => $th->getMessage()
+                'error' => $th->getMessage(),
             ], 500);
         }
     }

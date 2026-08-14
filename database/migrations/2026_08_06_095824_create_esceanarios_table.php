@@ -13,8 +13,8 @@ return new class extends Migration
     {
         Schema::create('esceanarios', function (Blueprint $table) {
             $table->id();
-            $table->string('nombre',255)->unique();
-            $table->set('estado',['Activo','Inactivo'])->default('Activo');
+            $table->string('nombre', 255)->unique();
+            $table->string('estado', 20)->default('Activo');
             $table->integer('versiones')->default(0);
             // $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
             $table->timestamps();

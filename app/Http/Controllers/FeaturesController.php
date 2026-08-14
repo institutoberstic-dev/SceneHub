@@ -13,9 +13,14 @@ class FeaturesController extends Controller
      */
     public function index()
     {
-        $features = Features::all();
-        dd($features);
-        return view('prueba',compact('features'));
+        return view('app');
+    }
+
+    public function data()
+    {
+        return response()->json(
+            Features::query()->latest()->limit(100)->get()
+        );
     }
 
     /**
@@ -31,16 +36,16 @@ class FeaturesController extends Controller
             $features = $data['features'];
 
             $datos = [
-                'corriente' => number_format((float) $features[0], 5, '.',''),
-                'temperatura' => number_format((float) $features[1], 5, '.',''),
-                'presion' => number_format((float) $features[2], 5, '.',''),
-                'eficiencia' => number_format((float) $features[3], 5, '.',''),
-                'voltajeTotal' => number_format((float) $features[4], 5, '.',''),
-                'produccionHidrogeno' => number_format((float) $features[5], 10, '.',''),
-                'temperaturaAmbiente' => number_format((float) $features[6], 5, '.',''),
-                'coefConvectivo' => number_format((float) $features[7], 5, '.',''),
-                'resistenciaInterna' => number_format((float) $features[8], 5, '.',''),
-                'numCeldas' => (int) $features[9]
+                'corriente' => number_format((float) $features[0], 5, '.', ''),
+                'temperatura' => number_format((float) $features[1], 5, '.', ''),
+                'presion' => number_format((float) $features[2], 5, '.', ''),
+                'eficiencia' => number_format((float) $features[3], 5, '.', ''),
+                'voltajeTotal' => number_format((float) $features[4], 5, '.', ''),
+                'produccionHidrogeno' => number_format((float) $features[5], 10, '.', ''),
+                'temperaturaAmbiente' => number_format((float) $features[6], 5, '.', ''),
+                'coefConvectivo' => number_format((float) $features[7], 5, '.', ''),
+                'resistenciaInterna' => number_format((float) $features[8], 5, '.', ''),
+                'numCeldas' => (int) $features[9],
             ];
 
             Features::create($datos);
@@ -50,18 +55,18 @@ class FeaturesController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Datos guardados correctamente',
-                'data' => $datos
+                'data' => $datos,
             ], 200);
 
         } catch (\Throwable $th) {
-            Log::error('Error al guardar features: ' . $th->getMessage(), [
-                'trace' => $th->getTraceAsString()
+            Log::error('Error al guardar features: '.$th->getMessage(), [
+                'trace' => $th->getTraceAsString(),
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Error al procesar los datos',
-                'error' => $th->getMessage()
+                'error' => $th->getMessage(),
             ], 500);
         }
     }
@@ -87,6 +92,6 @@ class FeaturesController extends Controller
      */
     public function destroy(Features $features)
     {
-        Log::alert("Log get", []);
+        Log::alert('Log get', []);
     }
 }

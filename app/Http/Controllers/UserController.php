@@ -4,74 +4,73 @@ namespace App\Http\Controllers;
 
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class UserController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
     public function index()
     {
-        return view('users.create');
-    }
-
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request)
-    {
-        try{
-            User::create([
-                'name' => $request->name,
-                'email' => $request->email,
-                'password' => bcrypt($request->password),
-            ]);
-
-            return response()->json(['message' => 'Usuario creado exitosamente, espere a la asignación de un rol.'], 201);
-        }
-        catch(\Exception $e){
-            return response()->json(['error' => 'Ha ocurrido un error al crear el usuario.'], 500);
-        }
-    }
-
-    /**
-     * Display the specified resource.
-     */
-    public function show(User $user)
-    {
-        return view('users.show', compact('user'));
-    }
-
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, User $user)
-    {
-        try{
-            $user->update([
-                'name' => $request->name,
-                'email' => $request->email,
-                'password' => bcrypt($request->password),
-            ]);
-
-            return response()->json(['message' => 'Usuario actualizado exitosamente.'], 200);
-        }
-        catch(\Exception $e){
-            return response()->json(['error' => 'Ha ocurrido un error al actualizar el usuario.'], 500);
-        }
-    }
-
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(User $user)
-    {
-        //
+        return view('app');
     }
 
     public function list()
     {
-        $users = User::all();
-        return view('users.list', compact('users'));
+        return view('app');
+    }
+
+    public function show(User $user)
+    {
+        return view('app');
+    }
+
+    public function data()
+    {
+        return response()->json(
+            User::query()
+                ->with('roles:id,name')
+                ->latest()
+                ->get(['id', 'name', 'email', 'created_at'])
+        );
+    }
+
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
+            'password' => ['required', 'string', 'min:8'],
+        ]);
+
+        $user = User::create($validated);
+
+        return response()->json([
+            'message' => 'Usuario creado exitosamente.',
+            'data' => $user->only(['id', 'name', 'email', 'created_at']),
+        ], 201);
+    }
+
+    public function update(Request $request, User $user)
+    {
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email', 'max:255', Rule::unique('users')->ignore($user->id)],
+            'password' => ['nullable', 'string', 'min:8'],
+        ]);
+
+        if (empty($validated['password'])) {
+            unset($validated['password']);
+        }
+
+        $user->update($validated);
+
+        return response()->json([
+            'message' => 'Usuario actualizado exitosamente.',
+            'data' => $user->only(['id', 'name', 'email', 'created_at']),
+        ]);
+    }
+
+    public function destroy(User $user)
+    {
+        return response()->json(['message' => 'Operación aún no implementada.'], 501);
     }
 }

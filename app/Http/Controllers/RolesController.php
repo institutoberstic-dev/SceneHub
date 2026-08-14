@@ -3,78 +3,65 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
-use Spatie\Permission\Models\Permission;
+use Illuminate\Validation\Rule;
 use Spatie\Permission\Models\Role;
 
 class RolesController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
     public function index()
     {
-        $permisos = Permission::all();
-        return view('roles.create', compact('permisos'));
-    }
-
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request)
-    {
-        //
-        try{
-            Role::create([
-                'name' => $request->name,
-                'guard_name' => $request->guard_name,
-            ]);
-
-            return response()->json(['message' => 'Rol creado exitosamente.'], 201);
-        }
-        catch(\Exception $e){
-            return response()->json(['error' => 'Ha ocurrido un error al crear el rol.'], 500);
-        }
-    }
-
-    /**
-     * Display the specified resource.
-     */
-    public function show(Role $rol)
-    {
-
-        return view('roles.show', compact('rol'));
-    }
-
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, Role $rol)
-    {
-        //
-        try{
-            $rol->update([
-                'name' => $request->name,
-                'guard_name' => $request->guard_name,
-            ]);
-
-            return response()->json(['message' => 'Rol actualizado exitosamente.'], 200);
-        }
-        catch(\Exception $e){
-            return response()->json(['error' => 'Ha ocurrido un error al actualizar el rol.'], 500);
-        }
-    }
-
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(Role $rol)
-    {
-        //
+        return view('app');
     }
 
     public function list()
     {
-        $roles = Role::all();
-        return view('roles.list', compact('roles'));
+        return view('app');
+    }
+
+    public function show(Role $rol)
+    {
+        return view('app');
+    }
+
+    public function data()
+    {
+        return response()->json(
+            Role::query()->withCount(['users', 'permissions'])->latest()->get()
+        );
+    }
+
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255', Rule::unique('roles', 'name')],
+            'guard_name' => ['required', 'string', 'max:255'],
+        ]);
+
+        $role = Role::create($validated);
+
+        return response()->json([
+            'message' => 'Rol creado exitosamente.',
+            'data' => $role,
+        ], 201);
+    }
+
+    public function update(Request $request, Role $rol)
+    {
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255', Rule::unique('roles', 'name')->ignore($rol->id)],
+            'guard_name' => ['required', 'string', 'max:255'],
+        ]);
+
+        $rol->update($validated);
+
+        return response()->json([
+            'message' => 'Rol actualizado exitosamente.',
+            'data' => $rol,
+        ]);
+    }
+
+    public function destroy(Role $rol)
+    {
+        return response()->json(['message' => 'Operación aún no implementada.'], 501);
     }
 }
