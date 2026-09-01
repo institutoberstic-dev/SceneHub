@@ -2,10 +2,9 @@ import {
     BarChart3,
     Bell,
     Boxes,
-    CloudCog,
-    Database,
     FolderOpen,
     Home,
+    LogOut,
     Menu,
     Search,
     ShieldCheck,
@@ -13,16 +12,14 @@ import {
     UserRoundCog,
     X,
 } from 'lucide-react';
-import { useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { api, csrfRequest, errorMessage } from '../http';
 
 const mainNavigation = [
     { label: 'Inicio', path: '/dashboard', icon: Home },
     { label: 'Escenarios', path: '/escenarios', icon: FolderOpen },
     { label: 'Resultados', path: '/resultados', icon: BarChart3 },
-    { label: 'Versiones', path: '/versiones', icon: ShieldCheck },
-    { label: 'Sincronización', path: '/sincronizacion', icon: CloudCog },
-    { label: 'Caché local', path: '/cache-local', icon: Database },
 ];
 
 const adminNavigation = [
@@ -34,25 +31,56 @@ const pageMeta = {
     '/dashboard': ['Inicio', 'Hub de escenarios'],
     '/escenarios': ['Escenarios', 'Carga y administración'],
     '/resultados': ['Resultados', 'Telemetría recibida'],
-    '/versiones': ['Versiones', 'Historial de publicaciones'],
-    '/sincronizacion': ['Sincronización', 'Estado de integración'],
-    '/cache-local': ['Caché local', 'Disponibilidad de contenidos'],
     '/users-list': ['Administración', 'Usuarios'],
     '/users-create': ['Administración', 'Usuarios'],
     '/roles-list': ['Administración', 'Roles'],
     '/roles-create': ['Administración', 'Roles'],
 };
 
+function storedUser() {
+    try {
+        return JSON.parse(sessionStorage.getItem('scenehub_user') || 'null');
+    } catch {
+        sessionStorage.removeItem('scenehub_user');
+        return null;
+    }
+}
+
 export default function AppLayout({ children }) {
     const [menuOpen, setMenuOpen] = useState(false);
+    const [loggingOut, setLoggingOut] = useState(false);
+    const [logoutError, setLogoutError] = useState('');
     const location = useLocation();
+    const navigate = useNavigate();
     const meta = pageMeta[location.pathname] || ['SceneHub', 'Módulo'];
-    const user = JSON.parse(sessionStorage.getItem('scenehub_user') || 'null');
+    const [user, setUser] = useState(storedUser);
+    const isAdmin = user?.roles?.includes('admin');
     const initials = user?.name
         ? user.name.split(' ').slice(0, 2).map((part) => part[0]).join('').toUpperCase()
         : 'SH';
 
     const closeMenu = () => setMenuOpen(false);
+
+    const logout = async () => {
+        setLoggingOut(true);
+        setLogoutError('');
+
+        try {
+            await csrfRequest({ method: 'post', url: '/log-out' });
+            sessionStorage.removeItem('scenehub_user');
+            navigate('/login', { replace: true });
+        } catch (error) {
+            setLogoutError(errorMessage(error, 'No fue posible cerrar la sesión. Inténtalo nuevamente.'));
+            setLoggingOut(false);
+        }
+    };
+
+    useEffect(() => {
+        api.get('/api/me').then(({ data }) => {
+            sessionStorage.setItem('scenehub_user', JSON.stringify(data));
+            setUser(data);
+        });
+    }, []);
 
     return (
         <div className="app-shell">
@@ -77,8 +105,14 @@ export default function AppLayout({ children }) {
                     </button>
                     <span className="avatar">{initials}</span>
                     <span className="user-name">{user?.name || 'Usuario local'}</span>
+                    <button className="logout-button" type="button" onClick={logout} disabled={loggingOut} title="Cerrar sesión">
+                        <LogOut size={18} />
+                        <span>{loggingOut ? 'Cerrando…' : 'Cerrar sesión'}</span>
+                    </button>
                 </div>
             </header>
+
+            {logoutError && <div className="logout-error" role="alert">{logoutError}</div>}
 
             <aside className={`sidebar ${menuOpen ? 'sidebar--open' : ''}`}>
                 <nav>
@@ -88,8 +122,8 @@ export default function AppLayout({ children }) {
                             <span>{label}</span>
                         </NavLink>
                     ))}
-                    <p className="nav-title">Administración</p>
-                    {adminNavigation.map(({ label, path, icon: Icon }) => (
+                    {isAdmin && <p className="nav-title">Administración</p>}
+                    {isAdmin && adminNavigation.map(({ label, path, icon: Icon }) => (
                         <NavLink key={path} to={path} onClick={closeMenu} className={({ isActive }) => isActive ? 'nav-link nav-link--active' : 'nav-link'}>
                             <Icon size={20} />
                             <span>{label}</span>

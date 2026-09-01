@@ -27,6 +27,15 @@ class DatabaseSeeder extends Seeder
 
         $admin->syncRoles('admin');
 
+        $owner = User::updateOrCreate([
+            'email' => 'owner@example.com',
+        ], [
+            'name' => 'Cliente propietario',
+            'password' => Hash::make('password'),
+        ]);
+
+        $owner->syncRoles('cliente');
+
         $supervisor = User::updateOrCreate([
             'email' => 'supervisor@example.com',
         ], [
@@ -34,6 +43,15 @@ class DatabaseSeeder extends Seeder
             'password' => Hash::make('password'),
         ]);
 
-        $supervisor->syncRoles('supervisor');
+        $supervisor->syncRoles('cliente');
+
+        $collaborator = User::updateOrCreate([
+            'email' => 'collaborator@example.com',
+        ], [
+            'name' => 'Colaborador',
+            'password' => Hash::make('password'),
+        ]);
+
+        $collaborator->syncRoles('cliente');
     }
 }

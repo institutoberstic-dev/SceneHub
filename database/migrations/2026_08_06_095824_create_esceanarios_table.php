@@ -13,10 +13,10 @@ return new class extends Migration
     {
         Schema::create('esceanarios', function (Blueprint $table) {
             $table->id();
-            $table->string('nombre', 255)->unique();
+            $table->string('nombre', 255);
             $table->string('estado', 20)->default('Activo');
-            $table->integer('versiones')->default(0);
-            // $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
+            $table->text('descripcion');
+            $table->decimal('versiones', 10, 1)->default(0);
             $table->timestamps();
         });
     }

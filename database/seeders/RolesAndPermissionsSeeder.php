@@ -17,24 +17,44 @@ class RolesAndPermissionsSeeder extends Seeder
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
         $permissions = collect([
+            'usuarios.gestionar',
+            'roles.gestionar',
+            'escenarios.leer',
+            'escenarios.crear',
+            'escenarios.actualizar',
+            'escenarios.eliminar',
+            'escenarios.invitar',
+            'escenarios.versionar',
             'archivos.leer',
-            'archivos.crear',
             'archivos.actualizar',
-            'archivos.eliminar',
         ])->mapWithKeys(
             fn (string $name) => [
                 $name => Permission::findOrCreate($name, 'web'),
             ]
         );
 
-        $supervisor = Role::findOrCreate('supervisor', 'web');
         $admin = Role::findOrCreate('admin', 'web');
-
-        $supervisor->syncPermissions([
-            $permissions->get('archivos.leer'),
-        ]);
+        $client = Role::findOrCreate('cliente', 'web');
 
         $admin->syncPermissions($permissions->values());
+
+        $client->syncPermissions($permissions->only([
+            'escenarios.leer', 'escenarios.crear', 'escenarios.actualizar',
+            'escenarios.eliminar', 'escenarios.invitar', 'escenarios.versionar',
+            'archivos.leer', 'archivos.actualizar',
+        ])->values());
+
+        foreach (['owner', 'supervisor', 'collaborator'] as $legacyRoleName) {
+            $legacyRole = Role::query()->where('name', $legacyRoleName)->where('guard_name', 'web')->first();
+            if (! $legacyRole) {
+                continue;
+            }
+            foreach ($legacyRole->users as $user) {
+                $user->assignRole($client);
+                $user->removeRole($legacyRole);
+            }
+            $legacyRole->delete();
+        }
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
     }

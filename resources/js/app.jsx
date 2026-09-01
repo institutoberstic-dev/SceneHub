@@ -1,10 +1,10 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import AppErrorBoundary from './components/AppErrorBoundary';
 import AppLayout from './components/AppLayout';
 import DashboardPage from './pages/DashboardPage';
 import LoginPage from './pages/LoginPage';
-import PlaceholderPage from './pages/PlaceholderPage';
 import ResultsPage from './pages/ResultsPage';
 import RolesPage from './pages/RolesPage';
 import ScenariosPage from './pages/ScenariosPage';
@@ -22,9 +22,6 @@ function App() {
                 <Route path="/dashboard" element={<ShellRoute><DashboardPage /></ShellRoute>} />
                 <Route path="/escenarios" element={<ShellRoute><ScenariosPage /></ShellRoute>} />
                 <Route path="/resultados" element={<ShellRoute><ResultsPage /></ShellRoute>} />
-                <Route path="/versiones" element={<ShellRoute><PlaceholderPage type="versions" /></ShellRoute>} />
-                <Route path="/sincronizacion" element={<ShellRoute><PlaceholderPage type="sync" /></ShellRoute>} />
-                <Route path="/cache-local" element={<ShellRoute><PlaceholderPage type="cache" /></ShellRoute>} />
                 <Route path="/users-list" element={<ShellRoute><UsersPage /></ShellRoute>} />
                 <Route path="/users-create" element={<ShellRoute><UsersPage createOnLoad /></ShellRoute>} />
                 <Route path="/users/:id" element={<ShellRoute><UsersPage /></ShellRoute>} />
@@ -37,8 +34,16 @@ function App() {
     );
 }
 
-createRoot(document.getElementById('app')).render(
+const rootElement = document.getElementById('app');
+
+if (!rootElement) {
+    throw new Error('No se encontró el elemento raíz #app.');
+}
+
+createRoot(rootElement).render(
     <StrictMode>
-        <App />
+        <AppErrorBoundary>
+            <App />
+        </AppErrorBoundary>
     </StrictMode>,
 );

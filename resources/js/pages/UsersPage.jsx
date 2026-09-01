@@ -10,7 +10,7 @@ export default function UsersPage({ createOnLoad = false }) {
     const [submitting, setSubmitting] = useState(false);
     const [query, setQuery] = useState('');
     const [feedback, setFeedback] = useState(null);
-    const [form, setForm] = useState({ name: '', email: '', password: '' });
+    const [form, setForm] = useState({ name: '', email: '', password: '', role: 'cliente' });
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -34,7 +34,7 @@ export default function UsersPage({ createOnLoad = false }) {
         try {
             const { data } = await csrfRequest({ method: 'post', url: '/users-register', data: form });
             setFeedback({ type: 'success', text: data.message });
-            setForm({ name: '', email: '', password: '' });
+            setForm({ name: '', email: '', password: '', role: 'cliente' });
             setModalOpen(false);
             await load();
         } catch (error) {
@@ -53,7 +53,7 @@ export default function UsersPage({ createOnLoad = false }) {
                 <div className="toolbar"><label className="inline-search"><Search size={17} /><input placeholder="Buscar por nombre o correo" value={query} onChange={(event) => setQuery(event.target.value)} /></label></div>
                 <div className="table-wrap"><table className="data-table"><thead><tr><th>Usuario</th><th>Correo</th><th>Roles</th><th>Fecha de registro</th></tr></thead><tbody>{visibleUsers.map((user) => <tr key={user.id}><td><span className="user-cell"><i>{user.name.slice(0, 2).toUpperCase()}</i><strong>{user.name}</strong></span></td><td><span className="muted-cell"><Mail size={15} />{user.email}</span></td><td><div className="role-list">{user.roles?.length ? user.roles.map((role) => <span className="status-pill status-pill--purple" key={role.id}>{role.name}</span>) : <span className="status-pill">Sin asignar</span>}</div></td><td><span className="muted-cell"><CalendarDays size={15} />{new Date(user.created_at).toLocaleDateString('es-CO')}</span></td></tr>)}{loading && <tr><td colSpan="4"><div className="table-empty">Cargando usuarios…</div></td></tr>}{!loading && visibleUsers.length === 0 && <tr><td colSpan="4"><div className="table-empty"><UserRound size={24} /> No hay usuarios para mostrar.</div></td></tr>}</tbody></table></div>
             </section>
-            <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Registrar usuario" subtitle="No se asignarán permisos ni roles automáticamente."><form className="modal-form" onSubmit={submit}><label className="field-label" htmlFor="user-name">Nombre completo</label><input className="text-input" id="user-name" required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Nombre del usuario" /><label className="field-label" htmlFor="user-email">Correo electrónico</label><input className="text-input" id="user-email" type="email" required value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} placeholder="usuario@institucion.edu" /><label className="field-label" htmlFor="user-password">Contraseña inicial</label><input className="text-input" id="user-password" type="password" minLength="8" required value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} placeholder="Mínimo 8 caracteres" /><div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setModalOpen(false)}>Cancelar</button><button className="primary-button" type="submit" disabled={submitting}><Plus size={18} />{submitting ? 'Registrando…' : 'Registrar usuario'}</button></div></form></Modal>
+            <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Registrar usuario" subtitle="Asigna el rol global de la cuenta; su acceso a escenarios se configura por separado."><form className="modal-form" onSubmit={submit}><label className="field-label" htmlFor="user-name">Nombre completo</label><input className="text-input" id="user-name" required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Nombre del usuario" /><label className="field-label" htmlFor="user-email">Correo electrónico</label><input className="text-input" id="user-email" type="email" required value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} placeholder="usuario@institucion.edu" /><label className="field-label" htmlFor="user-password">Contraseña inicial</label><input className="text-input" id="user-password" type="password" minLength="8" required value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} placeholder="Mínimo 8 caracteres" /><label className="field-label" htmlFor="user-role">Rol global</label><select className="text-input" id="user-role" value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })}><option value="cliente">Cliente</option><option value="admin">Administrador</option></select><div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setModalOpen(false)}>Cancelar</button><button className="primary-button" type="submit" disabled={submitting}><Plus size={18} />{submitting ? 'Registrando…' : 'Registrar usuario'}</button></div></form></Modal>
         </div>
     );
 }

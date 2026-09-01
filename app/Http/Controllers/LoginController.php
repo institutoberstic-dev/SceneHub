@@ -32,7 +32,11 @@ class LoginController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Inicio de sesión exitoso.',
-            'user' => Auth::user()->only(['id', 'name', 'email']),
+            'user' => [
+                ...Auth::user()->only(['id', 'name', 'email']),
+                'roles' => Auth::user()->getRoleNames()->values(),
+                'permissions' => Auth::user()->getAllPermissions()->pluck('name')->values(),
+            ],
             'redirect' => route('dashboard.index'),
         ]);
     }
@@ -44,5 +48,16 @@ class LoginController extends Controller
         $request->session()->regenerateToken();
 
         return response()->json(['success' => true]);
+    }
+
+    public function me(Request $request)
+    {
+        $user = $request->user();
+
+        return response()->json([
+            ...$user->only(['id', 'name', 'email']),
+            'roles' => $user->getRoleNames()->values(),
+            'permissions' => $user->getAllPermissions()->pluck('name')->values(),
+        ]);
     }
 }

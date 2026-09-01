@@ -39,13 +39,17 @@ class UserController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'password' => ['required', 'string', 'min:8'],
+            'role' => ['required', 'string', Rule::in(['admin', 'cliente'])],
         ]);
 
+        $role = $validated['role'];
+        unset($validated['role']);
         $user = User::create($validated);
+        $user->syncRoles($role);
 
         return response()->json([
             'message' => 'Usuario creado exitosamente.',
-            'data' => $user->only(['id', 'name', 'email', 'created_at']),
+            'data' => $user->load('roles:id,name'),
         ], 201);
     }
 
