@@ -1,5 +1,6 @@
-import { CheckCircle2, Clock3, File, FileArchive, Folder, Grid2X2, Info, List, MoreHorizontal, Pencil, Plus, Search, UploadCloud, UserRound } from 'lucide-react';
+import { CheckCircle2, Folder, Grid2X2, Info, List, MoreHorizontal, Pencil, Plus, Search, Trash2, UploadCloud, UserRound, UserX } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Modal from '../components/Modal';
 import { api, csrfRequest, errorMessage } from '../http';
 
@@ -10,9 +11,10 @@ function currentUser() {
 }
 
 export default function ScenariosPage() {
+    const navigate = useNavigate();
     const [user, setUser] = useState(currentUser);
     const isAdmin = user?.roles?.includes('admin');
-    const canCreate = user?.permissions?.includes('escenarios.crear') || user?.roles?.includes('admin');
+    const canCreate = !isAdmin && user?.permissions?.includes('escenarios.crear');
     const [scenarios, setScenarios] = useState([]);
     const [loading, setLoading] = useState(true);
     const [modalOpen, setModalOpen] = useState(false);
@@ -46,7 +48,6 @@ export default function ScenariosPage() {
     }, []);
 
     const visibleScenarios = useMemo(() => scenarios.filter((scenario) => scenario.nombre.toLowerCase().includes(query.toLowerCase())), [query, scenarios]);
-    const contents = useMemo(() => visibleScenarios.flatMap((scenario) => (scenario.contenidos || []).map((item) => ({ ...item, scenario }))), [visibleScenarios]);
     const accessLevelFor = useCallback((scenario) => {
         if (isAdmin) return 'admin';
         if (scenario.owner_id === user?.id) return 'owner';
@@ -115,9 +116,11 @@ export default function ScenariosPage() {
         const body = new FormData();
         body.append('_method', 'PUT');
         body.append('nombre', editForm.nombre);
-        body.append('descripcion', editForm.descripcion);
-        body.append('estado', editForm.estado);
-        if (editForm.archivo) body.append('archivo', editForm.archivo);
+        if (!isAdmin) {
+            body.append('descripcion', editForm.descripcion);
+            body.append('estado', editForm.estado);
+            if (editForm.archivo) body.append('archivo', editForm.archivo);
+        }
         try {
             const { data } = await csrfRequest({ method: 'post', url: `/escenarios/${editScenario.id}`, data: body });
             setFeedback({ type: 'success', text: data.message });
@@ -125,6 +128,26 @@ export default function ScenariosPage() {
             await load();
         } catch (error) { setFeedback({ type: 'error', text: errorMessage(error) }); }
         finally { setSubmitting(false); }
+    };
+
+    const removeMember = async (scenario, member) => {
+        if (!window.confirm(`¿Retirar el acceso de ${member.name}? La cuenta no será eliminada.`)) return;
+        try {
+            const { data } = await csrfRequest({ method: 'delete', url: `/escenarios/${scenario.id}/members/${member.id}` });
+            setFeedback({ type: 'success', text: data.message });
+            setAccessScenario(null);
+            await load();
+        } catch (error) { setFeedback({ type: 'error', text: errorMessage(error) }); }
+    };
+
+    const deleteScenario = async (scenario) => {
+        if (!window.confirm(`¿Eliminar definitivamente “${scenario.nombre}” y todos sus archivos?`)) return;
+        try {
+            const { data } = await csrfRequest({ method: 'delete', url: `/escenarios/${scenario.id}` });
+            setFeedback({ type: 'success', text: data.message });
+            setEditScenario(null);
+            await load();
+        } catch (error) { setFeedback({ type: 'error', text: errorMessage(error) }); }
     };
 
     return (
@@ -141,16 +164,8 @@ export default function ScenariosPage() {
                 <div className="scenario-grid">
                     {loading && <div className="loading-card">Cargando escenarios…</div>}
                     {!loading && visibleScenarios.length === 0 && <div className="empty-scenario"><span><Folder size={22} /></span><strong>Sin escenarios accesibles</strong><p>Un cliente puede crear escenarios o participar como supervisor o editor mediante invitación.</p></div>}
-                    {visibleScenarios.map((scenario, index) => { const accessLevel = accessLevelFor(scenario); return <article className="scenario-card" key={scenario.id}><div className="scenario-card__top"><span className={`folder-icon folder-icon--${tones[index % tones.length]}`}><Folder size={25} /></span><span className="scenario-card__actions">{['admin', 'owner', 'supervisor'].includes(accessLevel) && <button className="icon-button" type="button" onClick={() => openEdit(scenario)} aria-label={`Actualizar ${scenario.nombre}`} title="Actualizar escenario"><Pencil size={17} /></button>}{['admin', 'owner'].includes(accessLevel) && <button className="icon-button" type="button" onClick={() => setAccessScenario(scenario)} aria-label={`Gestionar accesos de ${scenario.nombre}`} title="Gestionar accesos"><MoreHorizontal size={19} /></button>}</span></div><strong>{scenario.nombre}</strong><p className="scenario-card__description">{scenario.descripcion || 'Sin descripción'}</p><span className="status-pill status-pill--green"><i className="status-dot" /> {scenario.estado}</span><span className="status-pill status-pill--purple">Rol: {accessLevel}</span><footer><span>{scenario.contenidos_count} elementos · V{scenario.versiones}</span><span><UserRound size={14} /> {scenario.owner?.name || 'Sin owner'}</span></footer></article>; })}
+                    {visibleScenarios.map((scenario, index) => { const accessLevel = accessLevelFor(scenario); return <article className="scenario-card scenario-card--clickable" key={scenario.id} onClick={() => navigate(`/escenarios/${scenario.id}`)}><div className="scenario-card__top"><span className={`folder-icon folder-icon--${tones[index % tones.length]}`}><Folder size={25} /></span><span className="scenario-card__actions">{['admin', 'owner', 'supervisor'].includes(accessLevel) && <button className="icon-button" type="button" onClick={(event) => { event.stopPropagation(); openEdit(scenario); }} aria-label={`Actualizar ${scenario.nombre}`} title={isAdmin ? 'Corregir nombre' : 'Actualizar escenario'}><Pencil size={17} /></button>}{accessLevel === 'owner' && <button className="icon-button" type="button" onClick={(event) => { event.stopPropagation(); setAccessScenario(scenario); }} aria-label={`Gestionar accesos de ${scenario.nombre}`} title="Gestionar accesos"><MoreHorizontal size={19} /></button>}</span></div><strong>{scenario.nombre}</strong><p className="scenario-card__description">{scenario.descripcion || 'Sin descripción'}</p><span className="status-pill status-pill--green"><i className="status-dot" /> {scenario.estado}</span><span className="status-pill status-pill--purple">Rol: {accessLevel}</span><footer><span>{scenario.contenidos_count} elementos · V{scenario.versiones}</span><span><UserRound size={14} /> {scenario.owner?.name || 'Sin owner'}</span></footer></article>; })}
                 </div>
-            </section>
-
-            <section className="content-card">
-                <div className="section-heading section-heading--inside"><div><h2>Contenido interno de escenarios</h2><p>Archivos y paquetes cargados, con responsables y versión del documento.</p></div></div>
-                <div className="table-wrap"><table className="data-table"><thead><tr><th>Contenido</th><th>Escenario</th><th>Tipo</th><th>Cargado por</th><th>Modificado por</th><th>Versión</th><th>Actualización</th><th>Estado</th></tr></thead><tbody>
-                    {contents.map((item) => <tr key={item.id}><td><span className="name-cell"><File size={18} /><strong>{item.nombre}</strong></span></td><td>{item.scenario.nombre}</td><td>{item.tipo}</td><td>{item.uploaded_by?.name || 'Sistema'}</td><td>{item.modified_by?.name || '—'}</td><td>V{item.version}</td><td><span className="muted-cell"><Clock3 size={14} />{new Date(item.updated_at).toLocaleString('es-CO')}</span></td><td><span className="status-pill status-pill--green"><CheckCircle2 size={14} />{item.estado}</span></td></tr>)}
-                    {!loading && contents.length === 0 && <tr><td colSpan="8"><div className="table-empty"><FileArchive size={24} /> No hay contenido cargado dentro de los escenarios visibles.</div></td></tr>}
-                </tbody></table></div>
             </section>
 
             <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Nuevo escenario" subtitle="El usuario actual quedará registrado como owner del escenario.">
@@ -158,7 +173,7 @@ export default function ScenariosPage() {
             </Modal>
 
             <Modal open={Boolean(accessScenario)} onClose={() => setAccessScenario(null)} title="Gestionar acceso" subtitle={accessScenario ? `Invita un usuario a ${accessScenario.nombre}.` : ''}>
-                <form className="modal-form" onSubmit={submitAccess}><label className="field-label" htmlFor="member-email">Correo del cliente registrado</label><input className="text-input" id="member-email" type="email" required value={accessForm.email} onChange={(event) => setAccessForm({ ...accessForm, email: event.target.value })} placeholder="usuario@institucion.edu" /><label className="field-label" htmlFor="member-level">Rol dentro del escenario</label><select className="text-input" id="member-level" value={accessForm.access_level} onChange={(event) => setAccessForm({ ...accessForm, access_level: event.target.value })}><option value="supervisor">Supervisor — consulta y actualiza datos</option><option value="editor">Editor — trabaja con contenido asignado</option></select><div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setAccessScenario(null)}>Cancelar</button><button className="primary-button" type="submit" disabled={submitting}><UserRound size={18} /> {submitting ? 'Asignando…' : 'Asignar rol'}</button></div></form>
+                <form className="modal-form" onSubmit={submitAccess}><label className="field-label" htmlFor="member-email">Correo del cliente registrado</label><input className="text-input" id="member-email" type="email" required value={accessForm.email} onChange={(event) => setAccessForm({ ...accessForm, email: event.target.value })} placeholder="usuario@institucion.edu" /><label className="field-label" htmlFor="member-level">Rol dentro del escenario</label><select className="text-input" id="member-level" value={accessForm.access_level} onChange={(event) => setAccessForm({ ...accessForm, access_level: event.target.value })}><option value="supervisor">Supervisor — consulta y actualiza datos</option><option value="editor">Editor — trabaja con contenido asignado</option></select><div className="member-list">{accessScenario?.users?.filter((member) => member.id !== accessScenario.owner_id).map((member) => <div className="member-list__item" key={member.id}><span><strong>{member.name}</strong><small>{member.email} · {member.pivot?.access_level}</small></span><button className="icon-button icon-button--danger" type="button" onClick={() => removeMember(accessScenario, member)} title="Retirar acceso"><UserX size={17} /></button></div>)}</div><div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setAccessScenario(null)}>Cerrar</button><button className="primary-button" type="submit" disabled={submitting}><UserRound size={18} /> {submitting ? 'Asignando…' : 'Asignar rol'}</button></div></form>
             </Modal>
 
             <Modal open={uploadOpen} onClose={() => setUploadOpen(false)} title="Cargar resultado" subtitle="Añade un archivo a un escenario existente y crea automáticamente su siguiente versión.">
@@ -166,7 +181,7 @@ export default function ScenariosPage() {
             </Modal>
 
             <Modal open={Boolean(editScenario)} onClose={() => setEditScenario(null)} title="Actualizar escenario" subtitle={editScenario ? `Edita los datos de ${editScenario.nombre}. El archivo es opcional.` : ''}>
-                <form className="modal-form" onSubmit={submitUpdate}><label className="field-label" htmlFor="edit-scenario-name">Nombre del escenario</label><input className="text-input" id="edit-scenario-name" required maxLength="255" value={editForm.nombre} onChange={(event) => setEditForm({ ...editForm, nombre: event.target.value })} /><label className="field-label" htmlFor="edit-scenario-description">Descripción</label><textarea className="text-input text-area" id="edit-scenario-description" required maxLength="2000" value={editForm.descripcion} onChange={(event) => setEditForm({ ...editForm, descripcion: event.target.value })} /><small className="field-help">{editForm.descripcion.length}/2000 caracteres</small><label className="field-label" htmlFor="edit-scenario-status">Estado</label><select className="text-input" id="edit-scenario-status" value={editForm.estado} onChange={(event) => setEditForm({ ...editForm, estado: event.target.value })}><option value="Activo">Activo</option><option value="Inactivo">Inactivo</option></select>{editScenario && ['admin', 'owner'].includes(accessLevelFor(editScenario)) && <label className="upload-zone" htmlFor="edit-scenario-file"><UploadCloud size={30} /><strong>{editForm.archivo?.name || 'Selecciona una actualización (opcional)'}</strong><span>{`Versión actual V${editScenario.versiones} · al adjuntar archivo se creará la siguiente versión`}</span><input id="edit-scenario-file" type="file" onChange={(event) => setEditForm({ ...editForm, archivo: event.target.files[0] || null })} /></label>}<div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setEditScenario(null)}>Cancelar</button><button className="primary-button" type="submit" disabled={submitting}><Pencil size={17} /> {submitting ? 'Actualizando…' : 'Guardar actualización'}</button></div></form>
+                <form className="modal-form" onSubmit={submitUpdate}><label className="field-label" htmlFor="edit-scenario-name">Nombre del escenario</label><input className="text-input" id="edit-scenario-name" required maxLength="255" value={editForm.nombre} onChange={(event) => setEditForm({ ...editForm, nombre: event.target.value })} />{!isAdmin && <><label className="field-label" htmlFor="edit-scenario-description">Descripción</label><textarea className="text-input text-area" id="edit-scenario-description" required maxLength="2000" value={editForm.descripcion} onChange={(event) => setEditForm({ ...editForm, descripcion: event.target.value })} /><small className="field-help">{editForm.descripcion.length}/2000 caracteres</small><label className="field-label" htmlFor="edit-scenario-status">Estado</label><select className="text-input" id="edit-scenario-status" value={editForm.estado} onChange={(event) => setEditForm({ ...editForm, estado: event.target.value })}><option value="Activo">Activo</option><option value="Inactivo">Inactivo</option></select>{editScenario && accessLevelFor(editScenario) === 'owner' && <label className="upload-zone" htmlFor="edit-scenario-file"><UploadCloud size={30} /><strong>{editForm.archivo?.name || 'Selecciona una actualización (opcional)'}</strong><span>{`Versión actual V${editScenario.versiones} · al adjuntar archivo se creará la siguiente versión`}</span><input id="edit-scenario-file" type="file" onChange={(event) => setEditForm({ ...editForm, archivo: event.target.files[0] || null })} /></label>}</>}<div className="modal-actions">{editScenario && ['admin', 'owner'].includes(accessLevelFor(editScenario)) && <button className="danger-button" type="button" onClick={() => deleteScenario(editScenario)}><Trash2 size={17} /> Eliminar</button>}<button className="secondary-button" type="button" onClick={() => setEditScenario(null)}>Cancelar</button><button className="primary-button" type="submit" disabled={submitting}><Pencil size={17} /> {submitting ? 'Actualizando…' : isAdmin ? 'Corregir nombre' : 'Guardar actualización'}</button></div></form>
             </Modal>
         </div>
     );

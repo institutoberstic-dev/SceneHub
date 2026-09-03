@@ -17,6 +17,7 @@ class Escenario extends Model
         'estado',
         'descripcion',
         'versiones',
+        'storage_directory',
     ];
 
     public $timestamps = true;

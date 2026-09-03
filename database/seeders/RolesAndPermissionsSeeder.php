@@ -36,7 +36,10 @@ class RolesAndPermissionsSeeder extends Seeder
         $admin = Role::findOrCreate('admin', 'web');
         $client = Role::findOrCreate('cliente', 'web');
 
-        $admin->syncPermissions($permissions->values());
+        $admin->syncPermissions($permissions->only([
+            'usuarios.gestionar', 'roles.gestionar', 'escenarios.leer',
+            'escenarios.actualizar', 'escenarios.eliminar', 'archivos.leer',
+        ])->values());
 
         $client->syncPermissions($permissions->only([
             'escenarios.leer', 'escenarios.crear', 'escenarios.actualizar',

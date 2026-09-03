@@ -9,7 +9,9 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Auth;
-use STS\ZipStream\Facades\Zip;
+use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use ZipArchive;
 
 class EscenariosController extends Controller
 {
@@ -45,8 +47,24 @@ class EscenariosController extends Controller
         );
     }
 
+    public function detail(Request $request, Escenario $escenario)
+    {
+        $this->authorizeReading($request, $escenario);
+
+        return response()->json(
+            $escenario->load([
+                'owner:id,name,email',
+                'users:id,name,email',
+                'contenidos.uploadedBy:id,name',
+                'contenidos.modifiedBy:id,name',
+            ])
+        );
+    }
+
     public function store(Request $request)
     {
+        abort_unless($request->user()->hasRole('cliente') && ! $request->user()->hasRole('admin'), 403, 'Los administradores no crean escenarios de clientes.');
+
         $validated = $request->validate([
             'nombre' => ['required', 'string', 'max:255', 'unique:esceanarios,nombre'],
             'descripcion' => ['required', 'string', 'max:2000'],
@@ -62,26 +80,31 @@ class EscenariosController extends Controller
                 'descripcion' => $validated['descripcion'],
                 'versiones' => $request->hasFile('archivo') ? 1 : 0,
             ]);
+            $escenario->update([
+                'storage_directory' => $this->scenarioDirectory($escenario),
+            ]);
 
             $escenario->users()->attach($user->id, [
                 'access_level' => 'owner',
                 'invited_by' => $user->id,
             ]);
 
+            File::ensureDirectoryExists($this->scenarioRoot($escenario));
+
             if ($request->hasFile('archivo')) {
                 $file = $request->file('archivo');
-                $ruta = $this->empaquetarArchivos($file, "escenario-{$escenario->id}-v1");
+                $stored = $this->storeScenarioFile($escenario, $file, 1.0);
 
                 EscenarioContenido::create([
                     'escenario_id' => $escenario->id,
                     'uploaded_by' => $user->id,
                     'modified_by' => $user->id,
                     'nombre' => $file->getClientOriginalName(),
-                    'ruta' => $ruta,
-                    'tipo' => 'paquete',
+                    'ruta' => $stored['path'],
+                    'tipo' => 'archivo',
                     'mime_type' => $file->getClientMimeType(),
                     'tamano' => $file->getSize() ?: 0,
-                    'version' => 1,
+                    'version' => $stored['version'],
                     'estado' => 'Disponible',
                 ]);
             }
@@ -104,7 +127,7 @@ class EscenariosController extends Controller
     {
         $actor = $request->user();
 
-        abort_unless($actor->hasRole('admin') || $escenario->owner_id === $actor->id, 403, 'Solo el owner del escenario puede gestionar sus accesos.');
+        abort_unless($escenario->owner_id === $actor->id, 403, 'Solo el owner del escenario puede gestionar sus accesos.');
 
         $validated = $request->validate([
             'email' => ['required', 'email', 'exists:users,email'],
@@ -140,11 +163,22 @@ class EscenariosController extends Controller
         ]);
     }
 
+    public function removeMember(Request $request, Escenario $escenario, User $user)
+    {
+        abort_unless($escenario->owner_id === $request->user()->id, 403, 'Solo el owner del escenario puede gestionar sus accesos.');
+        abort_if($user->id === $escenario->owner_id, 422, 'No es posible retirar al owner del escenario.');
+
+        $removed = $escenario->users()->where('users.id', $user->id)->exists();
+        abort_unless($removed, 404, 'El usuario no tiene acceso a este escenario.');
+        $escenario->users()->detach($user->id);
+
+        return response()->json(['message' => 'El acceso del usuario fue retirado. Su cuenta permanece activa.']);
+    }
+
     public function uploadContent(Request $request, Escenario $escenario)
     {
         $user = $request->user();
-        $hasAccess = $user->hasRole('admin')
-            || $escenario->owner_id === $user->id
+        $hasAccess = $escenario->owner_id === $user->id
             || $escenario->users()->where('users.id', $user->id)->exists();
 
         abort_unless($hasAccess, 403, 'No tienes acceso a este escenario.');
@@ -154,46 +188,62 @@ class EscenariosController extends Controller
             'archivo' => ['required', 'file', 'max:51200'],
         ]);
 
-        $content = DB::transaction(function () use ($request, $validated, $escenario, $user) {
-            $nextVersion = $this->nextVersion($escenario);
+        $result = DB::transaction(function () use ($request, $validated, $escenario, $user) {
+            $lockedScenario = Escenario::query()->lockForUpdate()->findOrFail($escenario->id);
             $file = $request->file('archivo');
-            $ruta = $this->empaquetarArchivos($file, "escenario-{$escenario->id}-v{$nextVersion}");
+            $stored = $this->storeScenarioFile($lockedScenario, $file);
 
             $content = EscenarioContenido::create([
                 'escenario_id' => $escenario->id,
                 'uploaded_by' => $user->id,
                 'modified_by' => $user->id,
                 'nombre' => $validated['nombre'] ?: $file->getClientOriginalName(),
-                'ruta' => $ruta,
+                'ruta' => $stored['path'],
                 'tipo' => 'resultado',
                 'mime_type' => $file->getClientMimeType(),
                 'tamano' => $file->getSize() ?: 0,
-                'version' => $nextVersion,
+                'version' => $stored['version'],
                 'estado' => 'Disponible',
             ]);
 
-            $escenario->update([
-                'versiones' => $nextVersion,
+            $lockedScenario->update([
+                'versiones' => $stored['version'],
                 'estado' => 'Activo',
             ]);
 
-            return $content;
+            return ['content' => $content, 'new_version' => $stored['new_version']];
         });
 
         return response()->json([
-            'message' => 'Resultado cargado y versionado exitosamente.',
-            'data' => $content->load(['uploadedBy:id,name', 'modifiedBy:id,name']),
+            'message' => $result['new_version']
+                ? 'Archivo modificado y nueva versión registrada exitosamente.'
+                : 'Archivo agregado a la versión actual exitosamente.',
+            'data' => $result['content']->load(['uploadedBy:id,name', 'modifiedBy:id,name']),
         ], 201);
     }
 
     public function update(Request $request, Escenario $escenario)
     {
         $user = $request->user();
-        $hasAccess = $user->hasRole('admin')
-            || $escenario->owner_id === $user->id
-            || $escenario->users()->where('users.id', $user->id)->exists();
 
-        abort_unless($hasAccess, 403, 'No tienes acceso a este escenario.');
+        if ($user->hasRole('admin')) {
+            $validated = $request->validate([
+                'nombre' => ['required', 'string', 'max:255', 'unique:esceanarios,nombre,'.$escenario->id],
+            ]);
+            $escenario->update(['nombre' => $validated['nombre']]);
+
+            return response()->json([
+                'message' => 'Nombre del escenario corregido exitosamente.',
+                'data' => $escenario->fresh()->load(['owner:id,name,email']),
+            ]);
+        }
+
+        abort_unless(
+            $escenario->owner_id === $user->id
+                || $escenario->users()->where('users.id', $user->id)->exists(),
+            403,
+            'No tienes acceso a este escenario.'
+        );
 
         $validated = $request->validate([
             'nombre' => ['required', 'string', 'max:255', 'unique:esceanarios,nombre,'.$escenario->id],
@@ -204,13 +254,13 @@ class EscenariosController extends Controller
 
         abort_if(
             $request->hasFile('archivo')
-                && ! $user->hasRole('admin')
                 && $request->attributes->get('scenario_access_level') !== 'owner',
             403,
             'Tu rol permite editar el escenario, pero no reemplazar archivos ni crear versiones.'
         );
 
-        DB::transaction(function () use ($request, $validated, $escenario, $user) {
+        $newVersion = DB::transaction(function () use ($request, $validated, $escenario, $user) {
+            $lockedScenario = Escenario::query()->lockForUpdate()->findOrFail($escenario->id);
             $scenarioData = [
                 'nombre' => $validated['nombre'],
                 'descripcion' => $validated['descripcion'],
@@ -219,60 +269,159 @@ class EscenariosController extends Controller
 
             if ($request->hasFile('archivo')) {
                 $file = $request->file('archivo');
-                $nextVersion = $this->nextVersion($escenario);
-                $ruta = $this->empaquetarArchivos($file, "escenario-{$escenario->id}-v{$nextVersion}");
+                $stored = $this->storeScenarioFile($lockedScenario, $file);
 
                 EscenarioContenido::create([
                     'escenario_id' => $escenario->id,
                     'uploaded_by' => $user->id,
                     'modified_by' => $user->id,
                     'nombre' => $file->getClientOriginalName(),
-                    'ruta' => $ruta,
+                    'ruta' => $stored['path'],
                     'tipo' => 'actualizacion',
                     'mime_type' => $file->getClientMimeType(),
                     'tamano' => $file->getSize() ?: 0,
-                    'version' => $nextVersion,
+                    'version' => $stored['version'],
                     'estado' => 'Disponible',
                 ]);
 
-                $scenarioData['versiones'] = $nextVersion;
+                $scenarioData['versiones'] = $stored['version'];
             }
 
-            $escenario->update($scenarioData);
+            $lockedScenario->update($scenarioData);
+
+            return $stored['new_version'] ?? false;
         });
 
         return response()->json([
             'message' => $request->hasFile('archivo')
-                ? 'Escenario actualizado y nueva versión registrada exitosamente.'
+                ? ($newVersion
+                    ? 'Escenario actualizado y nueva versión registrada exitosamente.'
+                    : 'Escenario actualizado; el archivo fue agregado a la versión actual.')
                 : 'Escenario actualizado exitosamente.',
             'data' => $escenario->fresh()->load(['owner:id,name,email', 'contenidos.uploadedBy:id,name', 'contenidos.modifiedBy:id,name']),
         ]);
     }
 
-    public function destroy(Escenario $escenario)
+    public function destroy(Request $request, Escenario $escenario)
     {
-        return response()->json(['message' => 'Operación aún no implementada.'], 501);
+        abort_unless(
+            $request->user()->hasRole('admin') || $escenario->owner_id === $request->user()->id,
+            403,
+            'Solo el owner o un administrador puede eliminar el escenario.'
+        );
+
+        $directory = $this->scenarioRoot($escenario);
+        $escenario->users()->detach();
+        $escenario->delete();
+        if (File::isDirectory($directory)) {
+            File::deleteDirectory($directory);
+        }
+
+        return response()->json(['message' => 'Escenario eliminado exitosamente.']);
     }
 
-    private function empaquetarArchivos(object $archivo, ?string $archiveStem = null): string
+    public function downloadContent(Request $request, Escenario $escenario, EscenarioContenido $contenido): BinaryFileResponse
     {
-        $nombreOriginal = pathinfo($archivo->getClientOriginalName(), PATHINFO_FILENAME);
-        $nombreZip = ($archiveStem ?: $nombreOriginal).'.zip';
-        $directorio = storage_path($this->storagePath);
+        $this->authorizeReading($request, $escenario);
+        abort_unless($contenido->escenario_id === $escenario->id, 404);
 
-        File::ensureDirectoryExists($directorio);
+        $path = storage_path('app'.DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $contenido->ruta));
+        abort_unless(File::isFile($path), 404, 'El archivo ya no está disponible.');
 
-        Zip::create($nombreZip, [
-            $archivo->getRealPath() => $archivo->getClientOriginalName(),
-        ])->saveTo($directorio.DIRECTORY_SEPARATOR.$nombreZip);
-
-        return 'public/'.$nombreZip;
+        return response()->download($path, basename($contenido->nombre));
     }
 
-    private function nextVersion(Escenario $escenario): float
+    public function download(Request $request, Escenario $escenario): BinaryFileResponse
     {
-        $currentVersion = (float) $escenario->versiones;
+        $this->authorizeReading($request, $escenario);
+        $root = $this->scenarioRoot($escenario);
+        abort_unless(File::isDirectory($root), 404, 'El escenario no contiene archivos descargables.');
 
-        return $currentVersion < 1 ? 1.0 : round($currentVersion + 0.1, 1);
+        $temporary = tempnam(sys_get_temp_dir(), 'scenario-');
+        $zip = new ZipArchive();
+        abort_unless($zip->open($temporary, ZipArchive::CREATE | ZipArchive::OVERWRITE) === true, 500, 'No fue posible preparar la descarga.');
+
+        foreach (File::allFiles($root) as $file) {
+            $zip->addFile($file->getRealPath(), str_replace('\\', '/', $file->getRelativePathname()));
+        }
+        $zip->close();
+
+        return response()->download($temporary, Str::slug($escenario->nombre).'.zip')->deleteFileAfterSend(true);
+    }
+
+    private function authorizeReading(Request $request, Escenario $escenario): void
+    {
+        $user = $request->user();
+        abort_unless(
+            $user->hasRole('admin')
+                || $escenario->owner_id === $user->id
+                || $escenario->users()->where('users.id', $user->id)->exists(),
+            403,
+            'No tienes acceso a este escenario.'
+        );
+    }
+
+    /** @return array{path: string, version: float, new_version: bool} */
+    private function storeScenarioFile(Escenario $escenario, object $archivo, ?float $initialVersion = null): array
+    {
+        $scenarioRoot = $this->scenarioRoot($escenario);
+        $currentVersion = $initialVersion ?? (float) $escenario->versiones;
+        $currentVersion = $currentVersion < 1 ? 1.0 : $currentVersion;
+        $currentDirectory = $scenarioRoot.DIRECTORY_SEPARATOR.$this->versionDirectory($currentVersion);
+        $fileName = basename($archivo->getClientOriginalName());
+        $currentFile = $currentDirectory.DIRECTORY_SEPARATOR.$fileName;
+        $newVersion = false;
+
+        if (File::exists($currentFile) && hash_file('sha256', $currentFile) !== hash_file('sha256', $archivo->getRealPath())) {
+            $nextVersion = $this->nextVersionValue($currentVersion);
+            $nextDirectory = $scenarioRoot.DIRECTORY_SEPARATOR.$this->versionDirectory($nextVersion);
+
+            File::ensureDirectoryExists($scenarioRoot);
+            if (! File::copyDirectory($currentDirectory, $nextDirectory)) {
+                throw new \RuntimeException('No fue posible copiar la versión actual del escenario.');
+            }
+
+            $currentVersion = $nextVersion;
+            $currentDirectory = $nextDirectory;
+            $currentFile = $currentDirectory.DIRECTORY_SEPARATOR.$fileName;
+            $newVersion = true;
+        }
+
+        File::ensureDirectoryExists($currentDirectory);
+        File::copy($archivo->getRealPath(), $currentFile);
+
+        return [
+            'path' => 'public/'.str_replace('\\', '/', $this->relativeScenarioPath($escenario, $currentVersion, $fileName)),
+            'version' => $currentVersion,
+            'new_version' => $newVersion,
+        ];
+    }
+
+    private function scenarioRoot(Escenario $escenario): string
+    {
+        $scenariosRoot = storage_path($this->storagePath.DIRECTORY_SEPARATOR.'escenarios');
+
+        return $scenariosRoot.DIRECTORY_SEPARATOR.($escenario->storage_directory ?: $this->scenarioDirectory($escenario));
+    }
+
+    private function scenarioDirectory(Escenario $escenario): string
+    {
+        return $escenario->id.'-'.(Str::slug($escenario->getOriginal('nombre') ?: $escenario->nombre) ?: 'escenario');
+    }
+
+    private function relativeScenarioPath(Escenario $escenario, float $version, string $fileName): string
+    {
+        return 'escenarios'.DIRECTORY_SEPARATOR.basename($this->scenarioRoot($escenario))
+            .DIRECTORY_SEPARATOR.$this->versionDirectory($version).DIRECTORY_SEPARATOR.$fileName;
+    }
+
+    private function versionDirectory(float $version): string
+    {
+        return number_format($version, 1, '.', '');
+    }
+
+    private function nextVersionValue(float $currentVersion): float
+    {
+        return round($currentVersion + 0.1, 1);
     }
 }

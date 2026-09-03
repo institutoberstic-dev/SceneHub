@@ -6,6 +6,7 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <meta name="theme-color" content="#f7f9fc">
     <title>SceneHub · Plataforma de Integración</title>
+    <link rel="stylesheet" href="{{ asset('fontawesome/css/all.min.css') }}">
     @viteReactRefresh
     @vite(['resources/css/app.css', 'resources/js/app.jsx'])
 </head>

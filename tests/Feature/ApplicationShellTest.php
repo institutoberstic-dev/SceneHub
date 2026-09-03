@@ -140,7 +140,7 @@ class ApplicationShellTest extends TestCase
         $this->get('/dashboard')->assertRedirect('/login');
     }
 
-    public function test_only_scenario_owner_or_admin_can_assign_members(): void
+    public function test_only_scenario_owner_can_assign_and_remove_members(): void
     {
         $owner = User::factory()->create();
         $owner->assignRole('cliente');
@@ -164,12 +164,52 @@ class ApplicationShellTest extends TestCase
             'invited_by' => $owner->id,
         ]);
 
+        $this->actingAs($this->admin)->postJson("/escenarios/{$scenarioId}/members", [
+            'email' => $member->email,
+            'access_level' => 'editor',
+        ])->assertForbidden();
+
+        $this->actingAs($owner)->deleteJson("/escenarios/{$scenarioId}/members/{$member->id}")
+            ->assertOk();
+        $this->assertDatabaseMissing('escenarios_users', [
+            'escenario_id' => $scenarioId,
+            'user_id' => $member->id,
+        ]);
+        $this->assertDatabaseHas('users', ['id' => $member->id]);
+
         $otherOwner = User::factory()->create();
         $otherOwner->assignRole('cliente');
         $this->actingAs($otherOwner)->postJson("/escenarios/{$scenarioId}/members", [
             'email' => $member->email,
             'access_level' => 'editor',
         ])->assertForbidden();
+    }
+
+    public function test_admin_can_only_read_rename_and_delete_scenarios(): void
+    {
+        $owner = User::factory()->create();
+        $owner->assignRole('cliente');
+        $scenarioId = $this->actingAs($owner)->postJson('/escenarios-store', [
+            'nombre' => 'Nombre original',
+            'descripcion' => 'Descripción del owner',
+        ])->json('data.id');
+
+        $this->actingAs($this->admin)->postJson('/escenarios-store', [
+            'nombre' => 'No permitido',
+            'descripcion' => 'No permitido',
+        ])->assertForbidden();
+
+        $this->getJson("/api/escenarios/{$scenarioId}")->assertOk();
+        $this->putJson("/escenarios/{$scenarioId}", ['nombre' => 'Nombre corregido'])
+            ->assertOk();
+        $this->assertDatabaseHas('esceanarios', [
+            'id' => $scenarioId,
+            'nombre' => 'Nombre corregido',
+            'descripcion' => 'Descripción del owner',
+        ]);
+
+        $this->deleteJson("/escenarios/{$scenarioId}")->assertOk();
+        $this->assertDatabaseMissing('esceanarios', ['id' => $scenarioId]);
     }
 
     public function test_assigned_user_can_upload_a_versioned_result(): void
@@ -182,7 +222,7 @@ class ApplicationShellTest extends TestCase
             'descripcion' => 'Seguimiento de resultados',
         ])->json('data.id');
 
-        $archive = storage_path("app/public/escenario-{$scenarioId}-v1.zip");
+        $scenarioDirectory = storage_path("app/public/escenarios/{$scenarioId}-escenario-con-resultados");
 
         try {
             $this->post('/escenarios/'.$scenarioId.'/contenidos', [
@@ -198,12 +238,13 @@ class ApplicationShellTest extends TestCase
                 'nombre' => 'Resultado inicial',
                 'tipo' => 'resultado',
             ]);
+            $this->assertFileExists($scenarioDirectory.'/1.0/resultado.json');
         } finally {
-            File::delete($archive);
+            File::deleteDirectory($scenarioDirectory);
         }
     }
 
-    public function test_owner_can_update_scenario_and_create_next_minor_version(): void
+    public function test_new_file_keeps_version_and_replacing_it_creates_a_cumulative_snapshot(): void
     {
         $owner = User::factory()->create();
         $owner->assignRole('cliente');
@@ -211,11 +252,10 @@ class ApplicationShellTest extends TestCase
         $scenarioId = $this->actingAs($owner)->post('/escenarios-store', [
             'nombre' => 'Escenario original',
             'descripcion' => 'Primera versión',
-            'archivo' => UploadedFile::fake()->create('base.json', 2, 'application/json'),
+            'archivo' => UploadedFile::fake()->createWithContent('base.json', '{"value":1}'),
         ])->json('data.id');
 
-        $baseArchive = storage_path("app/public/escenario-{$scenarioId}-v1.zip");
-        $updateArchive = storage_path("app/public/escenario-{$scenarioId}-v1.1.zip");
+        $scenarioDirectory = storage_path("app/public/escenarios/{$scenarioId}-escenario-original");
 
         try {
             $this->post('/escenarios/'.$scenarioId, [
@@ -223,7 +263,19 @@ class ApplicationShellTest extends TestCase
                 'nombre' => 'Escenario actualizado',
                 'descripcion' => 'Segunda entrega',
                 'estado' => 'Activo',
-                'archivo' => UploadedFile::fake()->create('actualizacion.json', 2, 'application/json'),
+                'archivo' => UploadedFile::fake()->createWithContent('adicional.json', '{"extra":true}'),
+            ])->assertOk()
+                ->assertJsonPath('data.versiones', 1);
+
+            $this->assertFileExists($scenarioDirectory.'/1.0/base.json');
+            $this->assertFileExists($scenarioDirectory.'/1.0/adicional.json');
+
+            $this->post('/escenarios/'.$scenarioId, [
+                '_method' => 'PUT',
+                'nombre' => 'Escenario actualizado',
+                'descripcion' => 'Tercera entrega',
+                'estado' => 'Activo',
+                'archivo' => UploadedFile::fake()->createWithContent('base.json', '{"value":2}'),
             ])->assertOk()
                 ->assertJsonPath('data.versiones', 1.1);
 
@@ -238,8 +290,12 @@ class ApplicationShellTest extends TestCase
                 'tipo' => 'actualizacion',
                 'modified_by' => $owner->id,
             ]);
+            $this->assertFileExists($scenarioDirectory.'/1.1/base.json');
+            $this->assertFileExists($scenarioDirectory.'/1.1/adicional.json');
+            $this->assertSame('{"value":1}', File::get($scenarioDirectory.'/1.0/base.json'));
+            $this->assertSame('{"value":2}', File::get($scenarioDirectory.'/1.1/base.json'));
         } finally {
-            File::delete([$baseArchive, $updateArchive]);
+            File::deleteDirectory($scenarioDirectory);
         }
     }
 

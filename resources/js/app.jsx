@@ -4,10 +4,13 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import AppErrorBoundary from './components/AppErrorBoundary';
 import AppLayout from './components/AppLayout';
 import DashboardPage from './pages/DashboardPage';
+import EmotionsPage from './pages/EmotionsPage';
+import EmotionDetailPage from './pages/EmotionDetailPage';
 import LoginPage from './pages/LoginPage';
 import ResultsPage from './pages/ResultsPage';
 import RolesPage from './pages/RolesPage';
 import ScenariosPage from './pages/ScenariosPage';
+import ScenarioDetailPage from './pages/ScenarioDetailPage';
 import UsersPage from './pages/UsersPage';
 
 function ShellRoute({ children }) {
@@ -21,7 +24,10 @@ function App() {
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/dashboard" element={<ShellRoute><DashboardPage /></ShellRoute>} />
                 <Route path="/escenarios" element={<ShellRoute><ScenariosPage /></ShellRoute>} />
+                <Route path="/escenarios/:id" element={<ShellRoute><ScenarioDetailPage /></ShellRoute>} />
                 <Route path="/resultados" element={<ShellRoute><ResultsPage /></ShellRoute>} />
+                <Route path="/emociones" element={<ShellRoute><EmotionsPage /></ShellRoute>} />
+                <Route path="/emociones/:id" element={<ShellRoute><EmotionDetailPage /></ShellRoute>} />
                 <Route path="/users-list" element={<ShellRoute><UsersPage /></ShellRoute>} />
                 <Route path="/users-create" element={<ShellRoute><UsersPage createOnLoad /></ShellRoute>} />
                 <Route path="/users/:id" element={<ShellRoute><UsersPage /></ShellRoute>} />

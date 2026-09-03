@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\EmocionesController;
 use App\Http\Controllers\EscenariosController;
 use App\Http\Controllers\LoginController;
 use App\Http\Controllers\ResultadosController;
@@ -26,11 +27,19 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard.index');
     Route::get('/resultados', [ResultadosController::class, 'index'])->name('resultados.index');
+    Route::get('/emociones', [EmocionesController::class, 'index'])->name('emociones.index');
+    Route::get('/api/emociones', [EmocionesController::class, 'data'])->name('emociones.data');
     Route::get('/escenarios', [EscenariosController::class, 'index'])->middleware('permission:escenarios.leer')->name('escenarios.index');
+    Route::get('/escenarios/{escenario}', [EscenariosController::class, 'show'])->middleware('permission:escenarios.leer')->name('escenarios.show');
+    Route::get('/api/escenarios/{escenario}', [EscenariosController::class, 'detail'])->middleware('permission:escenarios.leer')->name('escenarios.detail');
     Route::post('/escenarios-store', [EscenariosController::class, 'store'])->middleware('permission:escenarios.crear')->name('escenarios.store');
     Route::put('/escenarios/{escenario}', [EscenariosController::class, 'update'])->middleware('scenario.access:owner,supervisor')->name('escenarios.update');
     Route::post('/escenarios/{escenario}/contenidos', [EscenariosController::class, 'uploadContent'])->middleware('scenario.access:owner')->name('escenarios.contents.store');
     Route::post('/escenarios/{escenario}/members', [EscenariosController::class, 'invite'])->middleware('scenario.access:owner')->name('escenarios.members.store');
+    Route::delete('/escenarios/{escenario}/members/{user}', [EscenariosController::class, 'removeMember'])->middleware('scenario.access:owner')->name('escenarios.members.destroy');
+    Route::get('/escenarios/{escenario}/contenidos/{contenido}/download', [EscenariosController::class, 'downloadContent'])->middleware('permission:archivos.leer')->name('escenarios.contents.download');
+    Route::get('/escenarios/{escenario}/download', [EscenariosController::class, 'download'])->middleware('permission:archivos.leer')->name('escenarios.download');
+    Route::delete('/escenarios/{escenario}', [EscenariosController::class, 'destroy'])->name('escenarios.destroy');
     Route::get('/api/escenarios', [EscenariosController::class, 'data'])->middleware('permission:escenarios.leer')->name('escenarios.data');
 
     Route::middleware('role:admin')->group(function () {

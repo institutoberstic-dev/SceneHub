@@ -20,6 +20,7 @@ const mainNavigation = [
     { label: 'Inicio', path: '/dashboard', icon: Home },
     { label: 'Escenarios', path: '/escenarios', icon: FolderOpen },
     { label: 'Resultados', path: '/resultados', icon: BarChart3 },
+    { label: 'Emociones', path: '/emociones', faIcon: 'fa-face-smile-beam' },
 ];
 
 const adminNavigation = [
@@ -31,6 +32,7 @@ const pageMeta = {
     '/dashboard': ['Inicio', 'Hub de escenarios'],
     '/escenarios': ['Escenarios', 'Carga y administración'],
     '/resultados': ['Resultados', 'Telemetría recibida'],
+    '/emociones': ['Emociones', 'Catálogo emocional'],
     '/users-list': ['Administración', 'Usuarios'],
     '/users-create': ['Administración', 'Usuarios'],
     '/roles-list': ['Administración', 'Roles'],
@@ -52,7 +54,9 @@ export default function AppLayout({ children }) {
     const [logoutError, setLogoutError] = useState('');
     const location = useLocation();
     const navigate = useNavigate();
-    const meta = pageMeta[location.pathname] || ['SceneHub', 'Módulo'];
+    const meta = location.pathname.startsWith('/emociones/')
+        ? ['Emociones', 'Contenido de la sesión']
+        : pageMeta[location.pathname] || ['SceneHub', 'Módulo'];
     const [user, setUser] = useState(storedUser);
     const isAdmin = user?.roles?.includes('admin');
     const initials = user?.name
@@ -116,9 +120,9 @@ export default function AppLayout({ children }) {
 
             <aside className={`sidebar ${menuOpen ? 'sidebar--open' : ''}`}>
                 <nav>
-                    {mainNavigation.map(({ label, path, icon: Icon }) => (
+                    {mainNavigation.map(({ label, path, icon: Icon, faIcon }) => (
                         <NavLink key={path} to={path} onClick={closeMenu} className={({ isActive }) => isActive ? 'nav-link nav-link--active' : 'nav-link'}>
-                            <Icon size={20} />
+                            {Icon ? <Icon size={20} /> : <i className={`fa-solid ${faIcon} nav-fa-icon`} aria-hidden="true" />}
                             <span>{label}</span>
                         </NavLink>
                     ))}
