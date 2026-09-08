@@ -29,6 +29,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/resultados', [ResultadosController::class, 'index'])->name('resultados.index');
     Route::get('/emociones', [EmocionesController::class, 'index'])->name('emociones.index');
     Route::get('/api/emociones', [EmocionesController::class, 'data'])->name('emociones.data');
+    Route::get('/api/emociones/{meeting}', [EmocionesController::class, 'detail'])->whereNumber('meeting')->name('emociones.detail');
     Route::get('/escenarios', [EscenariosController::class, 'index'])->middleware('permission:escenarios.leer')->name('escenarios.index');
     Route::get('/escenarios/{escenario}', [EscenariosController::class, 'show'])->middleware('permission:escenarios.leer')->name('escenarios.show');
     Route::get('/api/escenarios/{escenario}', [EscenariosController::class, 'detail'])->middleware('permission:escenarios.leer')->name('escenarios.detail');

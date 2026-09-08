@@ -5,10 +5,11 @@ namespace App\Http\Controllers;
 use App\Models\Escenario;
 use App\Models\EscenarioContenido;
 use App\Models\User;
+use App\Services\ScenarioEmotionImport;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use ZipArchive;
@@ -16,6 +17,8 @@ use ZipArchive;
 class EscenariosController extends Controller
 {
     private string $storagePath = 'app/public';
+
+    private array $rollbackPaths = [];
 
     public function index()
     {
@@ -71,7 +74,8 @@ class EscenariosController extends Controller
             'archivo' => ['nullable', 'file', 'max:51200'],
         ]);
 
-        $escenario = DB::transaction(function () use ($request, $validated) {
+        $import = app(ScenarioEmotionImport::class)->read($request->file('archivo'));
+        $escenario = $this->withScenarioFiles(function () use ($request, $validated, $import) {
             $user = Auth::user();
             $escenario = Escenario::create([
                 'nombre' => $validated['nombre'],
@@ -89,7 +93,9 @@ class EscenariosController extends Controller
                 'invited_by' => $user->id,
             ]);
 
+            $this->rollbackPaths[] = $this->scenarioRoot($escenario);
             File::ensureDirectoryExists($this->scenarioRoot($escenario));
+            app(ScenarioEmotionImport::class)->persist($escenario->id, $import);
 
             if ($request->hasFile('archivo')) {
                 $file = $request->file('archivo');
@@ -188,38 +194,54 @@ class EscenariosController extends Controller
             'archivo' => ['required', 'file', 'max:51200'],
         ]);
 
-        $result = DB::transaction(function () use ($request, $validated, $escenario, $user) {
+        $import = app(ScenarioEmotionImport::class)->read($request->file('archivo'));
+        $result = $this->withScenarioFiles(function () use ($request, $validated, $escenario, $user, $import) {
             $lockedScenario = Escenario::query()->lockForUpdate()->findOrFail($escenario->id);
+            app(ScenarioEmotionImport::class)->persist($lockedScenario->id, $import);
             $file = $request->file('archivo');
             $stored = $this->storeScenarioFile($lockedScenario, $file);
 
-            $content = EscenarioContenido::create([
-                'escenario_id' => $escenario->id,
-                'uploaded_by' => $user->id,
-                'modified_by' => $user->id,
-                'nombre' => $validated['nombre'] ?: $file->getClientOriginalName(),
-                'ruta' => $stored['path'],
-                'tipo' => 'resultado',
-                'mime_type' => $file->getClientMimeType(),
-                'tamano' => $file->getSize() ?: 0,
-                'version' => $stored['version'],
-                'estado' => 'Disponible',
-            ]);
+            $content = $stored['stored']
+                ? EscenarioContenido::create([
+                    'escenario_id' => $escenario->id,
+                    'uploaded_by' => $user->id,
+                    'modified_by' => $user->id,
+                    'nombre' => ($validated['nombre'] ?? null) ?: $file->getClientOriginalName(),
+                    'ruta' => $stored['path'],
+                    'tipo' => 'resultado',
+                    'mime_type' => $file->getClientMimeType(),
+                    'tamano' => $file->getSize() ?: 0,
+                    'version' => $stored['version'],
+                    'estado' => 'Disponible',
+                ])
+                : EscenarioContenido::query()
+                    ->where('escenario_id', $escenario->id)
+                    ->where('ruta', $stored['path'])
+                    ->latest()
+                    ->first();
 
-            $lockedScenario->update([
-                'versiones' => $stored['version'],
-                'estado' => 'Activo',
-            ]);
+            if ($stored['stored']) {
+                $lockedScenario->update([
+                    'versiones' => $stored['version'],
+                    'estado' => 'Activo',
+                ]);
+            }
 
-            return ['content' => $content, 'new_version' => $stored['new_version']];
+            return [
+                'content' => $content,
+                'new_version' => $stored['new_version'],
+                'stored' => $stored['stored'],
+            ];
         });
 
         return response()->json([
-            'message' => $result['new_version']
-                ? 'Archivo modificado y nueva versión registrada exitosamente.'
-                : 'Archivo agregado a la versión actual exitosamente.',
-            'data' => $result['content']->load(['uploadedBy:id,name', 'modifiedBy:id,name']),
-        ], 201);
+            'message' => ! $result['stored']
+                ? 'El archivo no presenta cambios; no se almacenó una copia duplicada.'
+                : ($result['new_version']
+                    ? 'Archivo modificado y nueva versión registrada exitosamente.'
+                    : 'Archivo agregado a la versión actual exitosamente.'),
+            'data' => $result['content']?->load(['uploadedBy:id,name', 'modifiedBy:id,name']),
+        ], $result['stored'] ? 201 : 200);
     }
 
     public function update(Request $request, Escenario $escenario)
@@ -259,8 +281,10 @@ class EscenariosController extends Controller
             'Tu rol permite editar el escenario, pero no reemplazar archivos ni crear versiones.'
         );
 
-        $newVersion = DB::transaction(function () use ($request, $validated, $escenario, $user) {
+        $import = app(ScenarioEmotionImport::class)->read($request->file('archivo'));
+        $newVersion = $this->withScenarioFiles(function () use ($request, $validated, $escenario, $user, $import) {
             $lockedScenario = Escenario::query()->lockForUpdate()->findOrFail($escenario->id);
+            app(ScenarioEmotionImport::class)->persist($lockedScenario->id, $import);
             $scenarioData = [
                 'nombre' => $validated['nombre'],
                 'descripcion' => $validated['descripcion'],
@@ -271,32 +295,36 @@ class EscenariosController extends Controller
                 $file = $request->file('archivo');
                 $stored = $this->storeScenarioFile($lockedScenario, $file);
 
-                EscenarioContenido::create([
-                    'escenario_id' => $escenario->id,
-                    'uploaded_by' => $user->id,
-                    'modified_by' => $user->id,
-                    'nombre' => $file->getClientOriginalName(),
-                    'ruta' => $stored['path'],
-                    'tipo' => 'actualizacion',
-                    'mime_type' => $file->getClientMimeType(),
-                    'tamano' => $file->getSize() ?: 0,
-                    'version' => $stored['version'],
-                    'estado' => 'Disponible',
-                ]);
+                if ($stored['stored']) {
+                    EscenarioContenido::create([
+                        'escenario_id' => $escenario->id,
+                        'uploaded_by' => $user->id,
+                        'modified_by' => $user->id,
+                        'nombre' => $file->getClientOriginalName(),
+                        'ruta' => $stored['path'],
+                        'tipo' => 'actualizacion',
+                        'mime_type' => $file->getClientMimeType(),
+                        'tamano' => $file->getSize() ?: 0,
+                        'version' => $stored['version'],
+                        'estado' => 'Disponible',
+                    ]);
 
-                $scenarioData['versiones'] = $stored['version'];
+                    $scenarioData['versiones'] = $stored['version'];
+                }
             }
 
             $lockedScenario->update($scenarioData);
 
-            return $stored['new_version'] ?? false;
+            return $stored ?? null;
         });
 
         return response()->json([
             'message' => $request->hasFile('archivo')
-                ? ($newVersion
-                    ? 'Escenario actualizado y nueva versión registrada exitosamente.'
-                    : 'Escenario actualizado; el archivo fue agregado a la versión actual.')
+                ? (! $newVersion['stored']
+                    ? 'Escenario actualizado; el archivo no cambió y no se almacenó nuevamente.'
+                    : ($newVersion['new_version']
+                        ? 'Escenario actualizado y nueva versión registrada exitosamente.'
+                        : 'Escenario actualizado; el archivo fue agregado a la versión actual.'))
                 : 'Escenario actualizado exitosamente.',
             'data' => $escenario->fresh()->load(['owner:id,name,email', 'contenidos.uploadedBy:id,name', 'contenidos.modifiedBy:id,name']),
         ]);
@@ -338,7 +366,7 @@ class EscenariosController extends Controller
         abort_unless(File::isDirectory($root), 404, 'El escenario no contiene archivos descargables.');
 
         $temporary = tempnam(sys_get_temp_dir(), 'scenario-');
-        $zip = new ZipArchive();
+        $zip = new ZipArchive;
         abort_unless($zip->open($temporary, ZipArchive::CREATE | ZipArchive::OVERWRITE) === true, 500, 'No fue posible preparar la descarga.');
 
         foreach (File::allFiles($root) as $file) {
@@ -361,7 +389,7 @@ class EscenariosController extends Controller
         );
     }
 
-    /** @return array{path: string, version: float, new_version: bool} */
+    /** @return array{path: string, version: float, new_version: bool, stored: bool} */
     private function storeScenarioFile(Escenario $escenario, object $archivo, ?float $initialVersion = null): array
     {
         $scenarioRoot = $this->scenarioRoot($escenario);
@@ -371,10 +399,31 @@ class EscenariosController extends Controller
         $fileName = basename($archivo->getClientOriginalName());
         $currentFile = $currentDirectory.DIRECTORY_SEPARATOR.$fileName;
         $newVersion = false;
+        $latestExistingFile = $this->latestVersionedFile($scenarioRoot, $fileName);
 
-        if (File::exists($currentFile) && hash_file('sha256', $currentFile) !== hash_file('sha256', $archivo->getRealPath())) {
+        if ($latestExistingFile !== null
+            && hash_file('sha256', $latestExistingFile['path']) === hash_file('sha256', $archivo->getRealPath())) {
+            return [
+                'path' => 'public/'.str_replace('\\', '/', $this->relativeScenarioPath(
+                    $escenario,
+                    $latestExistingFile['version'],
+                    $fileName
+                )),
+                'version' => $currentVersion,
+                'new_version' => false,
+                'stored' => false,
+            ];
+        }
+
+        if ($latestExistingFile !== null
+            && hash_file('sha256', $latestExistingFile['path']) !== hash_file('sha256', $archivo->getRealPath())) {
             $nextVersion = $this->nextVersionValue($currentVersion);
             $nextDirectory = $scenarioRoot.DIRECTORY_SEPARATOR.$this->versionDirectory($nextVersion);
+
+            if (File::exists($nextDirectory)) {
+                throw new \RuntimeException('La siguiente versión ya existe en almacenamiento.');
+            }
+            $this->rollbackPaths[] = $nextDirectory;
 
             File::ensureDirectoryExists($scenarioRoot);
             if (! File::copyDirectory($currentDirectory, $nextDirectory)) {
@@ -388,13 +437,44 @@ class EscenariosController extends Controller
         }
 
         File::ensureDirectoryExists($currentDirectory);
-        File::copy($archivo->getRealPath(), $currentFile);
+        if (! $newVersion) {
+            $this->rollbackPaths[] = $currentFile;
+        }
+        if (! File::copy($archivo->getRealPath(), $currentFile)) {
+            throw new \RuntimeException('No fue posible almacenar el archivo del escenario.');
+        }
 
         return [
             'path' => 'public/'.str_replace('\\', '/', $this->relativeScenarioPath($escenario, $currentVersion, $fileName)),
             'version' => $currentVersion,
             'new_version' => $newVersion,
+            'stored' => true,
         ];
+    }
+
+    /** @return array{path: string, version: float}|null */
+    private function latestVersionedFile(string $scenarioRoot, string $fileName): ?array
+    {
+        if (! File::isDirectory($scenarioRoot)) {
+            return null;
+        }
+
+        $versionDirectories = collect(File::directories($scenarioRoot))
+            ->filter(fn (string $directory) => is_numeric(basename($directory)))
+            ->sortByDesc(fn (string $directory) => (float) basename($directory));
+
+        foreach ($versionDirectories as $directory) {
+            $candidate = $directory.DIRECTORY_SEPARATOR.$fileName;
+
+            if (File::isFile($candidate)) {
+                return [
+                    'path' => $candidate,
+                    'version' => (float) basename($directory),
+                ];
+            }
+        }
+
+        return null;
     }
 
     private function scenarioRoot(Escenario $escenario): string
@@ -423,5 +503,24 @@ class EscenariosController extends Controller
     private function nextVersionValue(float $currentVersion): float
     {
         return round($currentVersion + 0.1, 1);
+    }
+
+    private function withScenarioFiles(callable $callback): mixed
+    {
+        $this->rollbackPaths = [];
+        try {
+            return DB::transaction($callback);
+        } catch (\Throwable $exception) {
+            foreach (array_reverse($this->rollbackPaths) as $path) {
+                if (File::isDirectory($path)) {
+                    File::deleteDirectory($path);
+                } else {
+                    File::delete($path);
+                }
+            }
+            throw $exception;
+        } finally {
+            $this->rollbackPaths = [];
+        }
     }
 }

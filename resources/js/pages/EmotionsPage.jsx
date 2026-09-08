@@ -59,10 +59,10 @@ export default function EmotionsPage() {
                         <span className="emotion-card__icon"><MessageCircle size={24} /></span>
                         <h2>{meeting.title}</h2>
                         <p>{meeting.topic}</p>
-                        <div className="emotion-card__meta">
+                        {meeting.start_datetime && <div className="emotion-card__meta">
                             <span><CalendarDays size={15} /> {meetingDate(meeting.start_datetime)}</span>
                             <span><Clock3 size={15} /> {meetingTime(meeting.start_datetime)}</span>
-                        </div>
+                        </div>}
                         <footer>Ver contenido <MoveRight size={16} /></footer>
                     </article>
                 ))}

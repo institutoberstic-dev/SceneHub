@@ -6,6 +6,7 @@ use App\Models\User;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Tests\TestCase;
 
@@ -239,6 +240,14 @@ class ApplicationShellTest extends TestCase
                 'tipo' => 'resultado',
             ]);
             $this->assertFileExists($scenarioDirectory.'/1.0/resultado.json');
+
+            $this->post('/escenarios/'.$scenarioId.'/contenidos', [
+                'nombre' => 'Resultado repetido',
+                'archivo' => UploadedFile::fake()->create('resultado.json', 2, 'application/json'),
+            ])->assertOk()
+                ->assertJsonPath('message', 'El archivo no presenta cambios; no se almacenó una copia duplicada.');
+
+            $this->assertDatabaseCount('escenario_contenidos', 1);
         } finally {
             File::deleteDirectory($scenarioDirectory);
         }
@@ -294,6 +303,43 @@ class ApplicationShellTest extends TestCase
             $this->assertFileExists($scenarioDirectory.'/1.1/adicional.json');
             $this->assertSame('{"value":1}', File::get($scenarioDirectory.'/1.0/base.json'));
             $this->assertSame('{"value":2}', File::get($scenarioDirectory.'/1.1/base.json'));
+
+            // También debe reconocer archivos de versiones anteriores si una carpeta
+            // existente no contiene una instantánea acumulativa completa.
+            File::delete($scenarioDirectory.'/1.1/base.json');
+
+            $this->post('/escenarios/'.$scenarioId, [
+                '_method' => 'PUT',
+                'nombre' => 'Escenario actualizado',
+                'descripcion' => 'Cuarta entrega',
+                'estado' => 'Activo',
+                'archivo' => UploadedFile::fake()->createWithContent('base.json', '{"value":3}'),
+            ])->assertOk()
+                ->assertJsonPath('data.versiones', 1.2);
+
+            $this->assertFileExists($scenarioDirectory.'/1.2/base.json');
+            $this->assertFileExists($scenarioDirectory.'/1.2/adicional.json');
+            $this->assertSame('{"value":3}', File::get($scenarioDirectory.'/1.2/base.json'));
+
+            $contentCount = DB::table('escenario_contenidos')
+                ->where('escenario_id', $scenarioId)
+                ->count();
+
+            $this->post('/escenarios/'.$scenarioId, [
+                '_method' => 'PUT',
+                'nombre' => 'Escenario actualizado',
+                'descripcion' => 'Entrega sin cambios de archivo',
+                'estado' => 'Activo',
+                'archivo' => UploadedFile::fake()->createWithContent('base.json', '{"value":3}'),
+            ])->assertOk()
+                ->assertJsonPath('data.versiones', 1.2)
+                ->assertJsonPath('message', 'Escenario actualizado; el archivo no cambió y no se almacenó nuevamente.');
+
+            $this->assertSame(
+                $contentCount,
+                DB::table('escenario_contenidos')->where('escenario_id', $scenarioId)->count()
+            );
+            $this->assertDirectoryDoesNotExist($scenarioDirectory.'/1.3');
         } finally {
             File::deleteDirectory($scenarioDirectory);
         }
