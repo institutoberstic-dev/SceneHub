@@ -2,14 +2,15 @@ import { CalendarDays, Clock3, MessageCircle, MoveRight } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, errorMessage } from '../http';
+import Pagination from '../components/Pagination.jsx';
 
 function meetingDate(value) {
-    if (!value) return 'Fecha no disponible';
+    if (!value || !Number.isFinite(new Date(value).getTime())) return 'Fecha no disponible';
     return new Intl.DateTimeFormat('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(value));
 }
 
 function meetingTime(value) {
-    if (!value) return 'Hora no disponible';
+    if (!value || !Number.isFinite(new Date(value).getTime())) return 'Hora no disponible';
     return new Intl.DateTimeFormat('es-CO', { hour: '2-digit', minute: '2-digit', hour12: true }).format(new Date(value));
 }
 
@@ -18,6 +19,8 @@ export default function EmotionsPage() {
     const [meetings, setMeetings] = useState([]);
     const [loading, setLoading] = useState(true);
     const [failure, setFailure] = useState('');
+    const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(15);
 
     useEffect(() => {
         api.get('/api/emociones')
@@ -41,7 +44,7 @@ export default function EmotionsPage() {
             <section className="emotion-grid" aria-label="Sesiones del módulo Emociones">
                 {loading && <div className="content-card loading-card emotion-grid__message">Cargando sesiones…</div>}
                 {!loading && !failure && meetings.length === 0 && <div className="content-card emotions-empty-view emotion-grid__message">No se encontraron sesiones.</div>}
-                {meetings.map((meeting) => (
+                {meetings.slice((page - 1) * pageSize, page * pageSize).map((meeting) => (
                     <article
                         className="emotion-card"
                         key={meeting.id}
@@ -67,6 +70,7 @@ export default function EmotionsPage() {
                     </article>
                 ))}
             </section>
+            {!loading && !failure && <Pagination total={meetings.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={size => { setPageSize(size); setPage(1); }} />}
         </div>
     );
 }

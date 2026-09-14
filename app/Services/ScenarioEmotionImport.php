@@ -36,11 +36,28 @@ class ScenarioEmotionImport
                 $this->fail('El Excel debe contener una única hoja con datos.');
             }
             $sheet = reset($sheets);
-            if ($sheet->getHighestDataRow() > 100001 || $sheet->getHighestDataColumn() !== 'K' && $sheet->getHighestDataColumn() !== 'Q') {
+            if ($sheet->getHighestDataRow() > 100001 || ! in_array($sheet->getHighestDataColumn(), ['C', 'K', 'Q'])) {
                 $this->fail('La estructura no corresponde al detalle (17 columnas) ni al promedio (11 columnas), o supera 100.000 filas.');
             }
             $data = $sheet->toArray(null, false, false, false);
             $headers = array_map(fn ($value) => trim(preg_replace('/[^a-z0-9]+/', '_', strtolower(trim((string) $value))), '_'), array_shift($data));
+            if (count($headers) === 3) {
+                $expected = ['id_meeting', 'nivel_atencion_prom', 'emocion_ganadora_prom'];
+                if (array_diff($expected, $headers) || count(array_unique($headers)) !== 3) $this->fail('El promedio requiere id_meeting, nivel_atencion_prom y emocion_ganadora_prom.');
+                $rows = []; $seen = [];
+                foreach ($data as $index => $values) {
+                    if (! array_filter($values, fn ($value) => $value !== null && $value !== '')) continue;
+                    $row = array_combine($headers, $values);
+                    $validator = Validator::make($row, ['id_meeting' => ['required', 'integer', 'min:1'], 'nivel_atencion_prom' => ['required', 'string', 'max:100'], 'emocion_ganadora_prom' => ['required', 'string', 'max:100']]);
+                    if ($validator->fails()) $this->fail('Fila '.($index + 2).': '.implode(' ', $validator->errors()->all()));
+                    $row['id_meeting'] = (int) $row['id_meeting'];
+                    if (isset($seen[$row['id_meeting']])) $this->fail('Fila '.($index + 2).': id_meeting duplicado.');
+                    $seen[$row['id_meeting']] = true;
+                    $rows[] = $row;
+                }
+                if (! $rows) $this->fail('El Excel no contiene filas de datos.');
+                return ['table' => 'emotions_prom', 'format' => 'categorical', 'rows' => $rows, 'source_file' => basename($file->getClientOriginalName())];
+            }
             $average = in_array('score_atencion_prom', $headers, true);
             $metrics = array_map(fn ($metric) => $metric.($average ? '_prom' : ''), self::METRICS);
             $expected = $average
@@ -130,7 +147,9 @@ class ScenarioEmotionImport
         }
         // Replace this source snapshot, including rows removed from a revised file.
         foreach (['emotions', 'emotions_prom'] as $table) {
-            DB::table($table)->where('escenario_id', $scenarioId)->where('source_file', $import['source_file'])->delete();
+            $query = DB::table($table)->where('escenario_id', $scenarioId)->where('source_file', $import['source_file']);
+            if ($table === 'emotions_prom') $query->whereNull('data_version_id');
+            $query->delete();
         }
         $now = now();
         foreach (array_chunk($import['rows'], 250) as $chunk) {

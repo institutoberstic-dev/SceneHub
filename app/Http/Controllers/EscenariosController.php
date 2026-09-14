@@ -6,6 +6,7 @@ use App\Models\Escenario;
 use App\Models\EscenarioContenido;
 use App\Models\User;
 use App\Services\ScenarioEmotionImport;
+use App\Services\ScenarioSolarImport;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -74,7 +75,13 @@ class EscenariosController extends Controller
             'archivo' => ['nullable', 'file', 'max:51200'],
         ]);
 
-        $import = app(ScenarioEmotionImport::class)->read($request->file('archivo'));
+        $import = $this->readImport($request->file('archivo'));
+
+        return $this->emotionValidator($request, $validated, $import);
+    }
+
+    private function emotionValidator(Request $request, array $validated, ?array $import)
+    {
         $escenario = $this->withScenarioFiles(function () use ($request, $validated, $import) {
             $user = Auth::user();
             $escenario = Escenario::create([
@@ -95,11 +102,11 @@ class EscenariosController extends Controller
 
             $this->rollbackPaths[] = $this->scenarioRoot($escenario);
             File::ensureDirectoryExists($this->scenarioRoot($escenario));
-            app(ScenarioEmotionImport::class)->persist($escenario->id, $import);
+            $this->persistEmotions($escenario->id, $import);
 
             if ($request->hasFile('archivo')) {
                 $file = $request->file('archivo');
-                $stored = $this->storeScenarioFile($escenario, $file, 1.0);
+                $stored = $this->storeScenarioFile($escenario, $file, 1.0, ($import['table'] ?? null) === 'solar_data');
 
                 EscenarioContenido::create([
                     'escenario_id' => $escenario->id,
@@ -114,6 +121,8 @@ class EscenariosController extends Controller
                     'estado' => 'Disponible',
                 ]);
             }
+
+            if (isset($stored)) $this->persistSolar($escenario->id, $stored['path'], $import);
 
             return $escenario;
         });
@@ -194,12 +203,12 @@ class EscenariosController extends Controller
             'archivo' => ['required', 'file', 'max:51200'],
         ]);
 
-        $import = app(ScenarioEmotionImport::class)->read($request->file('archivo'));
+        $import = $this->readImport($request->file('archivo'));
         $result = $this->withScenarioFiles(function () use ($request, $validated, $escenario, $user, $import) {
             $lockedScenario = Escenario::query()->lockForUpdate()->findOrFail($escenario->id);
-            app(ScenarioEmotionImport::class)->persist($lockedScenario->id, $import);
+            $this->persistEmotions($lockedScenario->id, $import);
             $file = $request->file('archivo');
-            $stored = $this->storeScenarioFile($lockedScenario, $file);
+            $stored = $this->storeScenarioFile($lockedScenario, $file, null, ($import['table'] ?? null) === 'solar_data');
 
             $content = $stored['stored']
                 ? EscenarioContenido::create([
@@ -219,6 +228,8 @@ class EscenariosController extends Controller
                     ->where('ruta', $stored['path'])
                     ->latest()
                     ->first();
+
+            $this->persistSolar($escenario->id, $stored['path'], $import);
 
             if ($stored['stored']) {
                 $lockedScenario->update([
@@ -240,6 +251,8 @@ class EscenariosController extends Controller
                 : ($result['new_version']
                     ? 'Archivo modificado y nueva versión registrada exitosamente.'
                     : 'Archivo agregado a la versión actual exitosamente.'),
+            'stored' => $result['stored'],
+            'new_version' => $result['new_version'],
             'data' => $result['content']?->load(['uploadedBy:id,name', 'modifiedBy:id,name']),
         ], $result['stored'] ? 201 : 200);
     }
@@ -281,10 +294,12 @@ class EscenariosController extends Controller
             'Tu rol permite editar el escenario, pero no reemplazar archivos ni crear versiones.'
         );
 
-        $import = app(ScenarioEmotionImport::class)->read($request->file('archivo'));
+        $import = $this->readImport($request->file('archivo'));
+
+
         $newVersion = $this->withScenarioFiles(function () use ($request, $validated, $escenario, $user, $import) {
             $lockedScenario = Escenario::query()->lockForUpdate()->findOrFail($escenario->id);
-            app(ScenarioEmotionImport::class)->persist($lockedScenario->id, $import);
+            $this->persistEmotions($lockedScenario->id, $import);
             $scenarioData = [
                 'nombre' => $validated['nombre'],
                 'descripcion' => $validated['descripcion'],
@@ -293,7 +308,7 @@ class EscenariosController extends Controller
 
             if ($request->hasFile('archivo')) {
                 $file = $request->file('archivo');
-                $stored = $this->storeScenarioFile($lockedScenario, $file);
+                $stored = $this->storeScenarioFile($lockedScenario, $file, null, ($import['table'] ?? null) === 'solar_data');
 
                 if ($stored['stored']) {
                     EscenarioContenido::create([
@@ -313,6 +328,7 @@ class EscenariosController extends Controller
                 }
             }
 
+            if (isset($stored)) $this->persistSolar($escenario->id, $stored['path'], $import);
             $lockedScenario->update($scenarioData);
 
             return $stored ?? null;
@@ -377,6 +393,60 @@ class EscenariosController extends Controller
         return response()->download($temporary, Str::slug($escenario->nombre).'.zip')->deleteFileAfterSend(true);
     }
 
+    private function readImport(?\Illuminate\Http\UploadedFile $file): ?array
+    {
+        return app(ScenarioSolarImport::class)->read($file)
+            ?? app(ScenarioEmotionImport::class)->read($file);
+    }
+
+    private function persistEmotions(int $scenarioId, ?array $import): void
+    {
+        if (($import['format'] ?? null) === 'categorical') return;
+        if (($import['table'] ?? null) !== 'solar_data') app(ScenarioEmotionImport::class)->persist($scenarioId, $import);
+    }
+
+    private function persistSolar(int $scenarioId, string $path, ?array $import): void
+    {
+        if (($import['format'] ?? null) === 'categorical') {
+            $content = EscenarioContenido::where('escenario_id', $scenarioId)->where('ruta', $path)->latest('id')->firstOrFail();
+            app(\App\Services\DataVersions::class)->persistAverage($scenarioId, $content->id, $import);
+            return;
+        }
+        if (($import['table'] ?? null) !== 'solar_data') return;
+        $content = EscenarioContenido::where('escenario_id', $scenarioId)->where('ruta', $path)->latest('id')->firstOrFail();
+        app(ScenarioSolarImport::class)->persist($scenarioId, $content->id, $import);
+        app(\App\Services\DataVersions::class)->register($scenarioId, $content->id, 'solar', $import['rows']);
+    }
+
+    public function solarResults(Request $request, Escenario $escenario)
+    {
+        $this->authorizeReading($request, $escenario);
+        $mapping = [
+            'caudal' => 'caudal_m3_h', 'radiacion_solar' => 'irradiancia_w_m2',
+            'temperatura' => 'temperatura_c', 'velocidad_viento' => 'velocidad_viento_m_s',
+            'potencia_solar' => 'potencia_solar_w', 'potencia_neta' => 'potencia_neta_w',
+            'consumo_planta' => 'potencia_consumida_planta_w',
+            'agua_desalinizada' => 'agua_desalinizada_acum_m3', 'salmuera' => 'salmuera_acum_m3',
+            'lodos_gruesos' => 'lodos_gruesos_acum_paquetes', 'lodos_finos' => 'lodos_finos_acum_paquetes',
+        ];
+        $groups = DB::table('solar_data')->where('escenario_id', $escenario->id)
+            ->orderBy('tiempo_minutos')->get()->groupBy('archivo_id');
+        $files = $escenario->contenidos()->whereIn('id', $groups->keys())->get();
+        return response()->json(['archivos' => $files->map(function ($file) use ($groups, $mapping) {
+            $samples = ['1' => [], '5' => [], '10' => []];
+            foreach ($groups[$file->id] as $row) {
+                $point = ['tiempo_minutos' => (int) $row->tiempo_minutos,
+                    'energia_almacenada_wh' => null,
+                    'energia_almacenada_original' => $row->energia_almacenada];
+                foreach ($mapping as $source => $target) $point[$target] = $row->$source === null ? null : (float) $row->$source;
+                $samples[(string) $row->intervalo_minutos][] = $point;
+            }
+            $version = DB::table('data_versions')->where('archivo_id', $file->id)->where('tipo', 'solar')->orderByDesc('revision')->value('version');
+            return ['id' => $file->id, 'nombre' => $file->nombre, 'version_datos' => $version, 'muestreos' => $samples,
+                'advertencias' => ['La unidad de energía almacenada está pendiente de confirmar; se conserva el valor original rotulado W.']];
+        })->values()]);
+    }
+
     private function authorizeReading(Request $request, Escenario $escenario): void
     {
         $user = $request->user();
@@ -390,8 +460,18 @@ class EscenariosController extends Controller
     }
 
     /** @return array{path: string, version: float, new_version: bool, stored: bool} */
-    private function storeScenarioFile(Escenario $escenario, object $archivo, ?float $initialVersion = null): array
+    private function storeScenarioFile(Escenario $escenario, object $archivo, ?float $initialVersion = null, bool $solar = false): array
     {
+        if ($solar) {
+            $hash = hash_file('sha256', $archivo->getRealPath());
+            $existing = $escenario->contenidos()->whereIn('id', DB::table('solar_data')->where('escenario_id', $escenario->id)->select('archivo_id'))->get();
+            foreach ($existing as $content) {
+                $path = storage_path('app/'.$content->ruta);
+                if (is_file($path) && hash_file('sha256', $path) === $hash) {
+                    return ['path' => $content->ruta, 'version' => (float) $escenario->versiones, 'new_version' => false, 'stored' => false];
+                }
+            }
+        }
         $scenarioRoot = $this->scenarioRoot($escenario);
         $currentVersion = $initialVersion ?? (float) $escenario->versiones;
         $currentVersion = $currentVersion < 1 ? 1.0 : $currentVersion;

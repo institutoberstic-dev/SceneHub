@@ -90,14 +90,22 @@ class ApplicationShellTest extends TestCase
 
         foreach ([
             '/api/escenarios',
-            '/api/features',
-            '/api/simu-solars',
             '/api/users',
             '/api/roles',
         ] as $path) {
             $this->getJson($path)
                 ->assertOk()
                 ->assertJsonIsArray();
+        }
+    }
+
+    public function test_retired_telemetry_endpoints_explain_replacement_without_querying_removed_tables(): void
+    {
+        foreach (['/api/features', '/api/simu-solars'] as $path) {
+            $this->getJson($path)->assertStatus(410)->assertJsonPath('code', 'LEGACY_ENDPOINT_RETIRED')->assertJsonStructure(['message', 'endpoints']);
+        }
+        foreach (['/api/send-features', '/api/send-simu-sol'] as $path) {
+            $this->postJson($path, [])->assertStatus(410)->assertJsonPath('code', 'LEGACY_ENDPOINT_RETIRED');
         }
     }
 

@@ -25,7 +25,20 @@ class EmocionesController extends Controller
 
     public function data(Request $request): JsonResponse
     {
-        return response()->json($this->meetingsBL());
+        try {
+            $remote = $this->meetingsBL();
+        } catch (\Throwable $exception) {
+            report($exception);
+            $remote = ['meetings' => []];
+        }
+        $meetings = collect($remote['meetings'] ?? []);
+        $localIds = DB::table('emotions_prom')->whereIn('escenario_id', $this->accessible($request)->select('id'))->whereNotNull('data_version_id')->distinct()->pluck('id_meeting');
+        foreach ($localIds as $id) {
+            if (! $meetings->contains(fn ($meeting) => (int) $meeting['id'] === (int) $id)) {
+                $meetings->push(['id' => (int) $id, 'title' => 'Webinar '.$id, 'topic' => 'Promedio cargado en el escenario.']);
+            }
+        }
+        return response()->json(['meetings' => $meetings->values()]);
     }
 
     public function meetingsBL()
@@ -47,11 +60,20 @@ class EmocionesController extends Controller
         $scenario = $escenario?->id ?? 0;
         $details = DB::table('emotions')->where('escenario_id', $scenario)->where('id_meeting', $meeting);
         $averages = DB::table('emotions_prom')->where('escenario_id', $scenario)->where('id_meeting', $meeting);
+        $versions = DB::table('data_versions')->where('escenario_id', $scenario)->where('tipo', 'emociones_promedio')->orderByDesc('revision')->get(['id', 'version']);
+        $request->validate(['version' => ['nullable', 'regex:/^\d+\.\d+$/']]);
+        $version = $request->filled('version') ? $versions->firstWhere('version', $request->version) : $versions->first();
+        abort_if($request->filled('version') && ! $version, 404);
+        $summary = DB::table('emotions_prom')->where('data_version_id', $version->id ?? 0)->where('id_meeting', $meeting);
+        $averages->whereNull('data_version_id');
 
         return response()->json([
             'scenario' => $escenario?->only(['id', 'nombre']),
             'scenarios' => $scenarios,
             'meeting' => $meeting,
+            'version' => $version->version ?? null,
+            'versions' => $versions,
+            'summary' => $summary->orderBy('id_meeting')->get(['id_meeting', 'nivel_atencion_prom', 'emocion_ganadora_prom']),
             'totals' => [
                 'records' => (clone $details)->count(),
                 'valid' => (clone $details)->where('validez', true)->count(),

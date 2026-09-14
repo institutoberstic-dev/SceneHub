@@ -32,10 +32,16 @@ Route::middleware('auth')->group(function () {
     Route::get('/api/emociones/{meeting}', [EmocionesController::class, 'detail'])->whereNumber('meeting')->name('emociones.detail');
     Route::get('/escenarios', [EscenariosController::class, 'index'])->middleware('permission:escenarios.leer')->name('escenarios.index');
     Route::get('/escenarios/{escenario}', [EscenariosController::class, 'show'])->middleware('permission:escenarios.leer')->name('escenarios.show');
+    Route::get('/api/escenarios/{escenario}/resultados-solares', [EscenariosController::class, 'solarResults'])->middleware('permission:escenarios.leer')->name('escenarios.solar');
+    Route::get('/api/escenarios/{escenario}/versiones-datos', [\App\Http\Controllers\DataVersionsController::class, 'manifest'])->middleware('permission:escenarios.leer')->name('datos.versiones');
+    Route::get('/api/escenarios/{escenario}/datos', [\App\Http\Controllers\DataVersionsController::class, 'overview'])->middleware('permission:escenarios.leer')->name('datos.overview');
+    Route::get('/api/escenarios/{escenario}/emociones-promedio', [\App\Http\Controllers\DataVersionsController::class, 'averages'])->middleware('permission:escenarios.leer')->name('datos.emociones');
+    Route::get('/api/escenarios/{escenario}/solar', [\App\Http\Controllers\DataVersionsController::class, 'solar'])->middleware('permission:escenarios.leer')->name('datos.solar');
     Route::get('/api/escenarios/{escenario}', [EscenariosController::class, 'detail'])->middleware('permission:escenarios.leer')->name('escenarios.detail');
     Route::post('/escenarios-store', [EscenariosController::class, 'store'])->middleware('permission:escenarios.crear')->name('escenarios.store');
     Route::put('/escenarios/{escenario}', [EscenariosController::class, 'update'])->middleware('scenario.access:owner,supervisor')->name('escenarios.update');
     Route::post('/escenarios/{escenario}/contenidos', [EscenariosController::class, 'uploadContent'])->middleware('scenario.access:owner')->name('escenarios.contents.store');
+    Route::post('/api/escenarios/{escenario}/datos/actualizar', [EscenariosController::class, 'uploadContent'])->middleware('scenario.access:owner')->name('datos.actualizar');
     Route::post('/escenarios/{escenario}/members', [EscenariosController::class, 'invite'])->middleware('scenario.access:owner')->name('escenarios.members.store');
     Route::delete('/escenarios/{escenario}/members/{user}', [EscenariosController::class, 'removeMember'])->middleware('scenario.access:owner')->name('escenarios.members.destroy');
     Route::get('/escenarios/{escenario}/contenidos/{contenido}/download', [EscenariosController::class, 'downloadContent'])->middleware('permission:archivos.leer')->name('escenarios.contents.download');

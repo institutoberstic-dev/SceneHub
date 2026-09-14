@@ -365,3 +365,30 @@ button { cursor: pointer; }
 .version-card a svg:last-child { margin-left: auto; }
 .version-file-info { display: grid; gap: .2rem; }
 .version-file-info small { display: inline-flex; align-items: center; gap: .35rem; color: #707b8e; font-weight: 400; }
+.solar-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 16px; padding: 18px; }
+.solar-filters label { display: grid; gap: 7px; font-size: 12px; font-weight: 650; }
+.solar-body { padding: 18px; }
+.solar-body .solar-filters { padding: 0; }
+.solar-tabs { overflow-x: auto; }
+.solar-tabs button { white-space: nowrap; }
+.solar-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin: 18px 0; }
+.solar-actions label { display: flex; align-items: center; gap: 8px; }
+.solar-empty { padding: 36px 20px; border: 1px dashed #ccd5e1; border-radius: 10px; text-align: center; color: #667085; background: #f9fafb; }
+.solar-chart { padding: 18px; border: 1px solid #e4e7ec; border-radius: 10px; margin-top: 18px; }
+.solar-chart svg { display: block; width: 100%; min-height: 160px; }
+.solar-chart p, .solar-chart small { color: #667085; }
+.solar-table { overflow-x: auto; }
+.solar-table table { width: 100%; border-collapse: collapse; }
+.solar-table th, .solar-table td { padding: 12px; text-align: left; border-bottom: 1px solid #e4e7ec; white-space: nowrap; }
+.solar-table th { background: #f9fafb; }
+.solar-table small { display: block; color: #667085; }
+.smooth-pagination { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px; padding: 20px 0; font-size: 13px; }
+.smooth-pagination__pages { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.smooth-pagination button, .smooth-pagination select { border: 1px solid #d0d5dd; border-radius: 8px; background: white; min-width: 36px; min-height: 36px; padding: 6px; transition: background-color .18s ease, color .18s ease; }
+.smooth-pagination button[aria-current="page"] { background: #175cd3; color: white; border-color: #175cd3; }
+.smooth-pagination button:not(:disabled):hover { background: #eaf1fc; color: #175cd3; }
+.smooth-pagination button:disabled { opacity: .45; cursor: default; }
+.smooth-pagination button:focus-visible { outline: 2px solid #175cd3; outline-offset: 3px; }
+.page-fade { animation: page-enter .18s ease-out; }
+@keyframes page-enter { from { opacity: .4; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .page-fade { animation: none; } .smooth-pagination button { transition: none; } }

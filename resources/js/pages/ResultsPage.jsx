@@ -1,5 +1,6 @@
 import { BarChart3, Droplets, Sun } from 'lucide-react';
 import { useState } from 'react';
+import SolarResults from '../components/SolarResults';
 
 export default function ResultsPage() {
     const [tab, setTab] = useState('solar');
@@ -11,7 +12,7 @@ export default function ResultsPage() {
                 <div>
                     <span className="eyebrow">Resultados por escenario</span>
                     <h1>Resultados de simulación</h1>
-                    <p>Espacio preparado para integrar posteriormente la visualización definitiva de cada simulación.</p>
+                    <p>Consulta los muestreos y cambios de las simulaciones de cada escenario.</p>
                 </div>
             </section>
 
@@ -24,7 +25,7 @@ export default function ResultsPage() {
                 </button>
             </div>
 
-            <section className="content-card result-placeholder">
+            {tab === 'solar' ? <SolarResults /> : <section className="content-card result-placeholder">
                 <div className="section-heading section-heading--inside">
                     <div>
                         <h2>{title}</h2>
@@ -35,7 +36,7 @@ export default function ResultsPage() {
                     <BarChart3 size={28} />
                     <span>Área de visualización pendiente</span>
                 </div>
-            </section>
+            </section>}
         </div>
     );
 }

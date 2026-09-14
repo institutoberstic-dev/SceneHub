@@ -1,11 +1,19 @@
 <?php
 
-use App\Http\Controllers\FeaturesController;
-use App\Http\Controllers\SimuSolarController;
 use Illuminate\Support\Facades\Route;
 
-Route::post('/send-features', [FeaturesController::class, 'store'])->name('send-features');
-Route::post('/send-simu-sol', [SimuSolarController::class, 'store'])->name('send-simu-sol');
+// Explicitly retire the global telemetry whose storage migrations were removed.
+$retired = fn () => response()->json([
+    'code' => 'LEGACY_ENDPOINT_RETIRED',
+    'message' => 'Esta API fue retirada. Consulta los datos y versiones del escenario.',
+    'endpoints' => [
+        'GET /api/escenarios/{id}/versiones-datos?tipo=solar',
+        'GET /api/escenarios/{id}/solar',
+        'GET /api/escenarios/{id}/emociones-promedio',
+    ],
+], 410);
 
-Route::get('/features', [FeaturesController::class, 'data'])->name('features.data');
-Route::get('/simu-solars', [SimuSolarController::class, 'data'])->name('simu-solars.data');
+Route::post('/send-features', $retired)->name('send-features');
+Route::post('/send-simu-sol', $retired)->name('send-simu-sol');
+Route::get('/features', $retired)->name('features.data');
+Route::get('/simu-solars', $retired)->name('simu-solars.data');
