@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\Escenario;
 use App\Models\EscenarioContenido;
 use App\Models\User;
-use App\Services\ScenarioEmotionImport;
 use App\Services\ScenarioSolarImport;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -28,7 +27,6 @@ class EscenariosController extends Controller
 
     public function data(Request $request)
     {
-        $user = $request->user();
         $query = Escenario::query()
             ->with([
                 'owner:id,name,email',
@@ -39,13 +37,6 @@ class EscenariosController extends Controller
             ->withCount(['contenidos', 'users'])
             ->latest();
 
-        if (! $user->hasRole('admin')) {
-            $query->where(function ($accessible) use ($user) {
-                $accessible->where('owner_id', $user->id)
-                    ->orWhereHas('users', fn ($members) => $members->where('users.id', $user->id));
-            });
-        }
-
         return response()->json(
             $query->get()
         );
@@ -53,8 +44,6 @@ class EscenariosController extends Controller
 
     public function detail(Request $request, Escenario $escenario)
     {
-        $this->authorizeReading($request, $escenario);
-
         return response()->json(
             $escenario->load([
                 'owner:id,name,email',
@@ -67,20 +56,20 @@ class EscenariosController extends Controller
 
     public function store(Request $request)
     {
-        abort_unless($request->user()->hasRole('cliente') && ! $request->user()->hasRole('admin'), 403, 'Los administradores no crean escenarios de clientes.');
+        abort_unless($request->user()->hasAnyRole(['cliente', 'gestor_escenarios']) && ! $request->user()->hasRole('admin'), 403, 'El usuario no tiene un rol de gestión de escenarios.');
 
         $validated = $request->validate([
             'nombre' => ['required', 'string', 'max:255', 'unique:esceanarios,nombre'],
             'descripcion' => ['required', 'string', 'max:2000'],
-            'archivo' => ['nullable', 'file', 'max:51200'],
+            'archivo' => ['required', 'file', 'max:51200'],
         ]);
 
         $import = $this->readImport($request->file('archivo'));
 
-        return $this->emotionValidator($request, $validated, $import);
+        return $this->createScenario($request, $validated, $import);
     }
 
-    private function emotionValidator(Request $request, array $validated, ?array $import)
+    private function createScenario(Request $request, array $validated, ?array $import)
     {
         $escenario = $this->withScenarioFiles(function () use ($request, $validated, $import) {
             $user = Auth::user();
@@ -102,11 +91,9 @@ class EscenariosController extends Controller
 
             $this->rollbackPaths[] = $this->scenarioRoot($escenario);
             File::ensureDirectoryExists($this->scenarioRoot($escenario));
-            $this->persistEmotions($escenario->id, $import);
-
             if ($request->hasFile('archivo')) {
                 $file = $request->file('archivo');
-                $stored = $this->storeScenarioFile($escenario, $file, 1.0, ($import['table'] ?? null) === 'solar_data');
+                $stored = $this->storeScenarioFile($escenario, $file, 1.0);
 
                 EscenarioContenido::create([
                     'escenario_id' => $escenario->id,
@@ -151,7 +138,7 @@ class EscenariosController extends Controller
 
         $member = User::where('email', $validated['email'])->firstOrFail();
         abort_if($member->id === $escenario->owner_id, 422, 'El owner ya tiene acceso total al escenario.');
-        abort_unless($member->hasRole('cliente'), 422, 'Solo una cuenta con rol global cliente puede participar en un escenario.');
+        abort_unless($member->hasAnyRole(['cliente', 'gestor_escenarios', 'consulta']), 422, 'La cuenta no tiene un rol habilitado para participar en escenarios.');
 
         $escenario->users()->syncWithoutDetaching([
             $member->id => [
@@ -195,7 +182,6 @@ class EscenariosController extends Controller
         $user = $request->user();
         $hasAccess = $escenario->owner_id === $user->id
             || $escenario->users()->where('users.id', $user->id)->exists();
-
         abort_unless($hasAccess, 403, 'No tienes acceso a este escenario.');
 
         $validated = $request->validate([
@@ -206,15 +192,14 @@ class EscenariosController extends Controller
         $import = $this->readImport($request->file('archivo'));
         $result = $this->withScenarioFiles(function () use ($request, $validated, $escenario, $user, $import) {
             $lockedScenario = Escenario::query()->lockForUpdate()->findOrFail($escenario->id);
-            $this->persistEmotions($lockedScenario->id, $import);
             $file = $request->file('archivo');
-            $stored = $this->storeScenarioFile($lockedScenario, $file, null, ($import['table'] ?? null) === 'solar_data');
+            $stored = $this->storeScenarioFile($lockedScenario, $file);
 
             $content = $stored['stored']
                 ? EscenarioContenido::create([
                     'escenario_id' => $escenario->id,
-                    'uploaded_by' => $user->id,
-                    'modified_by' => $user->id,
+                    'uploaded_by' => $user?->id,
+                    'modified_by' => $user?->id,
                     'nombre' => ($validated['nombre'] ?? null) ?: $file->getClientOriginalName(),
                     'ruta' => $stored['path'],
                     'tipo' => 'resultado',
@@ -299,7 +284,6 @@ class EscenariosController extends Controller
 
         $newVersion = $this->withScenarioFiles(function () use ($request, $validated, $escenario, $user, $import) {
             $lockedScenario = Escenario::query()->lockForUpdate()->findOrFail($escenario->id);
-            $this->persistEmotions($lockedScenario->id, $import);
             $scenarioData = [
                 'nombre' => $validated['nombre'],
                 'descripcion' => $validated['descripcion'],
@@ -308,7 +292,7 @@ class EscenariosController extends Controller
 
             if ($request->hasFile('archivo')) {
                 $file = $request->file('archivo');
-                $stored = $this->storeScenarioFile($lockedScenario, $file, null, ($import['table'] ?? null) === 'solar_data');
+                $stored = $this->storeScenarioFile($lockedScenario, $file);
 
                 if ($stored['stored']) {
                     EscenarioContenido::create([
@@ -395,24 +379,11 @@ class EscenariosController extends Controller
 
     private function readImport(?\Illuminate\Http\UploadedFile $file): ?array
     {
-        return app(ScenarioSolarImport::class)->read($file)
-            ?? app(ScenarioEmotionImport::class)->read($file);
-    }
-
-    private function persistEmotions(int $scenarioId, ?array $import): void
-    {
-        if (($import['format'] ?? null) === 'categorical') return;
-        if (($import['table'] ?? null) !== 'solar_data') app(ScenarioEmotionImport::class)->persist($scenarioId, $import);
+        return app(ScenarioSolarImport::class)->read($file);
     }
 
     private function persistSolar(int $scenarioId, string $path, ?array $import): void
     {
-        if (($import['format'] ?? null) === 'categorical') {
-            $content = EscenarioContenido::where('escenario_id', $scenarioId)->where('ruta', $path)->latest('id')->firstOrFail();
-            app(\App\Services\DataVersions::class)->persistAverage($scenarioId, $content->id, $import);
-            return;
-        }
-        if (($import['table'] ?? null) !== 'solar_data') return;
         $content = EscenarioContenido::where('escenario_id', $scenarioId)->where('ruta', $path)->latest('id')->firstOrFail();
         app(ScenarioSolarImport::class)->persist($scenarioId, $content->id, $import);
         app(\App\Services\DataVersions::class)->register($scenarioId, $content->id, 'solar', $import['rows']);
@@ -420,7 +391,6 @@ class EscenariosController extends Controller
 
     public function solarResults(Request $request, Escenario $escenario)
     {
-        $this->authorizeReading($request, $escenario);
         $mapping = [
             'caudal' => 'caudal_m3_h', 'radiacion_solar' => 'irradiancia_w_m2',
             'temperatura' => 'temperatura_c', 'velocidad_viento' => 'velocidad_viento_m_s',
@@ -433,7 +403,7 @@ class EscenariosController extends Controller
             ->orderBy('tiempo_minutos')->get()->groupBy('archivo_id');
         $files = $escenario->contenidos()->whereIn('id', $groups->keys())->get();
         return response()->json(['archivos' => $files->map(function ($file) use ($groups, $mapping) {
-            $samples = ['1' => [], '5' => [], '10' => []];
+            $samples = ['1' => [], '5' => [], '10' => [], '60' => []];
             foreach ($groups[$file->id] as $row) {
                 $point = ['tiempo_minutos' => (int) $row->tiempo_minutos,
                     'energia_almacenada_wh' => null,
@@ -460,18 +430,9 @@ class EscenariosController extends Controller
     }
 
     /** @return array{path: string, version: float, new_version: bool, stored: bool} */
-    private function storeScenarioFile(Escenario $escenario, object $archivo, ?float $initialVersion = null, bool $solar = false): array
+    private function storeScenarioFile(Escenario $escenario, object $archivo, ?float $initialVersion = null): array
     {
-        if ($solar) {
-            $hash = hash_file('sha256', $archivo->getRealPath());
-            $existing = $escenario->contenidos()->whereIn('id', DB::table('solar_data')->where('escenario_id', $escenario->id)->select('archivo_id'))->get();
-            foreach ($existing as $content) {
-                $path = storage_path('app/'.$content->ruta);
-                if (is_file($path) && hash_file('sha256', $path) === $hash) {
-                    return ['path' => $content->ruta, 'version' => (float) $escenario->versiones, 'new_version' => false, 'stored' => false];
-                }
-            }
-        }
+        // Compare with the latest file only: restoring an older result is a new variation.
         $scenarioRoot = $this->scenarioRoot($escenario);
         $currentVersion = $initialVersion ?? (float) $escenario->versiones;
         $currentVersion = $currentVersion < 1 ? 1.0 : $currentVersion;

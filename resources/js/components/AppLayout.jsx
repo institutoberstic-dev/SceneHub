@@ -80,9 +80,11 @@ export default function AppLayout({ children }) {
     };
 
     useEffect(() => {
-        api.get('/api/me').then(({ data }) => {
+        api.get('/session-user').then(({ data }) => {
             sessionStorage.setItem('scenehub_user', JSON.stringify(data));
             setUser(data);
+        }).catch(() => {
+            // La sesión se conserva desde el inicio de sesión; no mostrar una alerta por una consulta silenciosa.
         });
     }, []);
 

@@ -1,21 +1,34 @@
 # GET de datos y versiones para Unity
 
-Las rutas globales antiguas `/api/features`, `/api/simu-solars`, `/api/send-features` y `/api/send-simu-sol` responden HTTP 410 con `LEGACY_ENDPOINT_RETIRED`. Sus tablas fueron retiradas del esquema. Los clientes deben usar los GET por escenario descritos aquí; una respuesta 410 no significa que el escenario carezca de datos.
+Las rutas globales antiguas `/api/features`, `/api/simu-solars`, `/api/send-features` y `/api/send-simu-sol` fueron eliminadas. Los clientes deben usar las API solares por escenario y la API emocional directa por webinar.
 
-Todos estos endpoints requieren la sesión autenticada existente y acceso de lectura al escenario. No son públicos. La aplicación actual usa cookies de sesión de Laravel; Unity debe conservar las cookies de su inicio de sesión y enviar `Accept: application/json`. No se ha añadido ni supuesto autenticación Bearer. Una respuesta 401/403 debe tratarse como problema de acceso, no como ausencia de datos.
+Las ocho rutas públicas actuales están en `routes/api.php`:
+
+| Método y ruta | Función |
+| --- | --- |
+| GET `/api/emociones` | Listado de webinars y asociación por ID. |
+| POST `/api/emociones/datos` | Carga emocional multipart, campo `archivo`, máximo 50 MB. |
+| GET `/api/emociones/{meeting}` | Promedio en `summary` y detalle en `details`, 50 filas por página (`?page=2`). |
+| GET `/api/escenarios` | Listado de simulaciones. |
+| GET `/api/escenarios/{escenario}` | Información y archivos del escenario. |
+| GET `/api/escenarios/{escenario}/resultados-solares` | Datos solares adaptados a las vistas del panel. |
+| GET `/api/escenarios/{escenario}/solar` | Descarga de resultados solares, admite `version`. |
+| GET `/api/escenarios/{escenario}/versiones-datos?tipo=solar` | Consulta de cambios y versiones solares. |
+
+La carga solar requiere sesión y permisos en rutas web. La carga emocional es pública según la configuración solicitada. Usuarios y roles se consultan internamente mediante `/users-data` y `/roles-data`, con sesión y rol administrador; `/session-user` requiere sesión.
 
 ## Consultar si hay novedades
 
-`GET /api/escenarios/ID/versiones-datos?tipo=emociones_promedio`
+`GET /api/escenarios/ID/versiones-datos?tipo=solar`
 
-Para Solar: `tipo=solar`. Con una copia local: añadir `version_actual=1.0` y opcionalmente `sha256_actual=HASH_GUARDADO`.
+El control de versiones solo aplica a resultados solares. Los datos emocionales se consultan por webinar y no tienen versionamiento.
 
 Respuesta orientativa:
 
 ```json
 {
   "escenario_id": 1,
-  "tipo": "emociones_promedio",
+  "tipo": "solar",
   "estado": "actualizacion_disponible",
   "mensaje": "Hay una actualización disponible. Pulsa Actualizar para descargarla.",
   "hay_datos": true,
@@ -24,7 +37,7 @@ Respuesta orientativa:
   "version": "1.1",
   "sha256": "identificador de contenido de 64 caracteres",
   "versiones": [],
-  "url_datos": "/api/escenarios/1/emociones-promedio?version=1.1"
+  "url_datos": "/api/escenarios/1/solar?version=1.1"
 }
 ```
 
@@ -42,48 +55,37 @@ Las versiones son cadenas (`"1.0"`, `"1.1"`), no floats. La revisión interna es
 
 `sha256` identifica el contenido normalizado por el servidor. Guardarlo como metadato; no compararlo con el hash de los bytes de la respuesta HTTP. La URL incluye la versión exacta para evitar descargar otra publicación si cambia el servidor entre consulta y descarga.
 
-## Descargar promedio emocional
+## Consultar datos emocionales
 
-`GET /api/escenarios/ID/emociones-promedio?version=1.0`
+`GET /api/emociones/ID_MEETING`
 
-Sin `version`, devuelve la última. Devuelve `escenario_id`, `tipo`, `version`, `sha256`, `hay_datos` y `datos` con los tres campos originales:
+Devuelve los datos cargados para el webinar seleccionado. No recibe escenario ni versión. Los tres campos del promedio son:
 
 ```json
 [{"id_meeting":10,"nivel_atencion_prom":"ATENTO","emocion_ganadora_prom":"disgust"}]
 ```
 
-No calcula promedios, probabilidades, puntajes ni porcentajes. Las columnas históricas permanecen en la base, pero no se fabrican valores para ellas. El nuevo Excel requiere una hoja con los tres encabezados y un registro por reunión. El detalle antiguo y los promedios numéricos anteriores siguen siendo importables, pero no generan publicaciones del nuevo formato.
+No calcula ni inventa valores. El promedio admite una hoja con los tres encabezados y un registro por reunión. El archivo completo requiere las 17 columnas de detalle del formato entregado. El promedio numérico antiguo de 11 columnas ya no se admite. Cada carga reemplaza solo su formato para los meetings incluidos, conservando el otro formato. No hay versiones emocionales.
 
 ## Descargar Solar
 
 `GET /api/escenarios/ID/solar?version=1.0`
 
-Devuelve metadatos y `muestreos` con claves `"1"`, `"5"`, `"10"`. Las filas contienen `tiempo_minutos`, `intervalo_minutos` y los nombres originales del almacenamiento: `caudal`, `radiacion_solar`, `temperatura`, `velocidad_viento`, `potencia_solar`, `potencia_neta`, `energia_almacenada`, `consumo_planta`, `agua_desalinizada`, `salmuera`, `lodos_gruesos`, `lodos_finos`. Incluye un diccionario `unidades`. La unidad de almacenamiento queda nula hasta confirmarse; el valor original se conserva.
+Devuelve metadatos y `muestreos` con claves `"1"`, `"5"`, `"10"` y `"60"`. Las filas contienen `tiempo_minutos`, `intervalo_minutos` y los nombres originales del almacenamiento: `caudal`, `radiacion_solar`, `temperatura`, `velocidad_viento`, `potencia_solar`, `potencia_neta`, `energia_almacenada`, `consumo_planta`, `agua_desalinizada`, `salmuera`, `lodos_gruesos`, `lodos_finos`. Incluye un diccionario `unidades`. La unidad de almacenamiento queda nula hasta confirmarse; el valor original se conserva.
 
 La descarga devuelve la serie completa para el JSON local; la paginación es visual y no corta el archivo de Unity. La web conserva su endpoint `/api/escenarios/ID/resultados-solares` con los campos adaptados a la interfaz y `version_datos` por archivo.
 
 ## Prueba manual
 
-1. Subir `data_final_promedio (2).xlsx` a un escenario. Abrir Emociones y Webinar 10: debe mostrar ATENTO y disgust, sin porcentajes.
+1. Enviar `data_final_promedio (2).xlsx` a `POST /api/emociones/datos`. Abrir Emociones y Webinar 10: debe mostrar ATENTO y disgust, sin porcentajes. La carga emocional se relaciona únicamente mediante `id_meeting`; no crea versiones de escenarios.
 2. Consultar el manifiesto sin versión local: debe devolver `descarga_inicial` y `1.0`.
 3. Consultarlo con `version_actual=1.0`: debe devolver `sin_cambios` y `hay_datos=true`.
 4. Cambiar un valor en una copia del Excel y cargarla en el mismo escenario: debe publicar `1.1` y avisar al cliente con `1.0`.
 5. Descargar `?version=1.0` y `?version=1.1`: cada una conserva sus valores. Cambiar únicamente el nombre o el orden de las filas no publica otra versión si el contenido coincide con el último.
-6. Repetir el manifiesto con `tipo=solar`. El Excel solar anterior alimenta las tres hojas; cambiar de página o tamaño no recarga toda la pantalla.
+6. Repetir el manifiesto con `tipo=solar`. `Resultados caso 1.xlsx` alimenta las cuatro hojas (`Minutos`, `Cada5min`, `Cada10min` y `Horas`); cambiar de página o tamaño no recarga toda la pantalla.
 
 ## Consultar el escenario completo
 
-`GET /api/escenarios/ID/datos`
+Cada escenario representa una alternativa de simulación solar. Sus sucesivas cargas son revisiones de esa alternativa: se mantiene el historial y se puede consultar una versión concreta. La validación comprueba formato, columnas, hojas y tiempos; no puede determinar si los valores representan una propuesta científicamente válida. Las emociones pertenecen a meetings y conservan detalle y promedio independientes.
 
-Este endpoint reúne la metadata del escenario y la publicación más reciente de cada módulo, sin repetir en la respuesta las series completas. Incluye `datos.emociones_promedio` y `datos.solar`, sus versiones, hashes, historial y URLs de descarga. También devuelve `url_actualizacion` para que un cliente administrativo pueda publicar una nueva versión.
-
-## Publicar una actualización
-
-`POST /api/escenarios/ID/datos/actualizar` con `multipart/form-data`:
-
-* `archivo` (obligatorio): Excel de promedio emocional o libro Solar.
-* `nombre` (opcional): nombre visible del archivo.
-
-La ruta requiere ser owner del escenario. El servidor detecta la estructura del libro, valida sus hojas y registra la versión correspondiente. Si el contenido y el nombre almacenado coinciden con el último archivo, responde `200` con `stored: false`; si hay contenido nuevo responde `201` y `new_version: true` cuando se publica una revisión nueva. La respuesta incluye el contenido almacenado y estos indicadores para que el cliente pueda refrescar su manifiesto.
-
-El flujo recomendado para otro proyecto es: consultar `GET /datos`, comparar la versión local con `datos.*.version`, descargar la URL exacta solo si cambió, y usar `POST /datos/actualizar` únicamente cuando ese proyecto sea el proveedor autorizado de nuevos archivos.
+`GET /api/escenarios/ID` devuelve los metadatos y contenidos del escenario. Las rutas antiguas de emociones bajo escenarios y `/api/users`, `/api/roles`, `/api/me` están retiradas.

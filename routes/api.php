@@ -1,19 +1,16 @@
 <?php
 
+use App\Http\Controllers\DataVersionsController;
+use App\Http\Controllers\EmocionesController;
+use App\Http\Controllers\EscenariosController;
 use Illuminate\Support\Facades\Route;
 
-// Explicitly retire the global telemetry whose storage migrations were removed.
-$retired = fn () => response()->json([
-    'code' => 'LEGACY_ENDPOINT_RETIRED',
-    'message' => 'Esta API fue retirada. Consulta los datos y versiones del escenario.',
-    'endpoints' => [
-        'GET /api/escenarios/{id}/versiones-datos?tipo=solar',
-        'GET /api/escenarios/{id}/solar',
-        'GET /api/escenarios/{id}/emociones-promedio',
-    ],
-], 410);
-
-Route::post('/send-features', $retired)->name('send-features');
-Route::post('/send-simu-sol', $retired)->name('send-simu-sol');
-Route::get('/features', $retired)->name('features.data');
-Route::get('/simu-solars', $retired)->name('simu-solars.data');
+// Public API: no authentication, permissions, CSRF or rate limiting.
+Route::get('/emociones', [EmocionesController::class, 'data'])->name('emociones.data');
+Route::post('/emociones/datos', [EmocionesController::class, 'uploadExternal'])->name('emociones.upload.external');
+Route::get('/emociones/{meeting}', [EmocionesController::class, 'detail'])->whereNumber('meeting')->name('emociones.detail');
+Route::get('/escenarios/{escenario}/resultados-solares', [EscenariosController::class, 'solarResults'])->name('escenarios.solar');
+Route::get('/escenarios/{escenario}/versiones-datos', [DataVersionsController::class, 'manifest'])->name('datos.versiones');
+Route::get('/escenarios/{escenario}/solar', [DataVersionsController::class, 'solar'])->name('datos.solar');
+Route::get('/escenarios/{escenario}', [EscenariosController::class, 'detail'])->name('escenarios.detail');
+Route::get('/escenarios', [EscenariosController::class, 'data'])->name('escenarios.data');

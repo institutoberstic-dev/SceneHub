@@ -8,6 +8,13 @@ use Spatie\Permission\Models\Role;
 
 class RolesController extends Controller
 {
+    public function data()
+    {
+        return response()->json(Role::withCount(['users', 'permissions'])
+            ->orderBy('name')
+            ->get(['id', 'name', 'guard_name']));
+    }
+
     public function index()
     {
         return view('app');
@@ -21,13 +28,6 @@ class RolesController extends Controller
     public function show(Role $rol)
     {
         return view('app');
-    }
-
-    public function data()
-    {
-        return response()->json(
-            Role::query()->withCount(['users', 'permissions'])->latest()->get()
-        );
     }
 
     public function store(Request $request)

@@ -62,7 +62,7 @@ class EmotionVersionsTest extends TestCase
         $this->getJson('/api/emociones/10')->assertJsonPath('summary.0.emocion_ganadora_prom', 'happy');
         $this->getJson('/api/emociones/10?version=1.0')->assertJsonPath('summary.0.emocion_ganadora_prom', 'disgust');
         $other = User::factory()->create(); $other->assignRole('cliente'); $this->actingAs($other);
-        foreach (['versiones-datos?tipo=emociones_promedio', 'emociones-promedio', 'solar'] as $path) $this->getJson("$base/$path")->assertForbidden();
+        foreach (['versiones-datos?tipo=emociones_promedio', 'emociones-promedio', 'solar'] as $path) $this->getJson("$base/$path")->assertOk();
     }
     public function test_bad_average_is_rejected_without_advancing_version(): void
     {
@@ -72,27 +72,38 @@ class EmotionVersionsTest extends TestCase
         $this->assertDatabaseCount('emotions_prom', 1);
     }
 
-    public function test_scenario_overview_and_update_api_expose_versions(): void
+    public function test_external_client_detects_internal_updates_and_downloads_new_data(): void
     {
-        $id = $this->postJson('/escenarios-store', ['nombre' => 'API', 'descripcion' => 'Test', 'archivo' => $this->file()])->assertCreated()->json('data.id');
+        $original = $this->file();
+        $originalBytes = file_get_contents($original->getRealPath());
+        $id = $this->postJson('/escenarios-store', ['nombre' => 'API', 'descripcion' => 'Test', 'archivo' => $original])->assertCreated()->json('data.id');
         $overview = $this->getJson("/api/escenarios/$id/datos")->assertOk();
         $overview->assertJsonPath('escenario.id', $id)
             ->assertJsonPath('datos.emociones_promedio.disponible', true)
             ->assertJsonPath('datos.emociones_promedio.version', '1.0')
             ->assertJsonPath('datos.solar.disponible', false)
-            ->assertJsonPath('metodo_actualizacion', 'POST multipart/form-data con archivo y nombre opcional');
+            ->assertJsonMissingPath('url_actualizacion')
+            ->assertJsonMissingPath('metodo_actualizacion');
 
-        $this->post("/api/escenarios/$id/datos/actualizar", ['archivo' => $this->file('disgust', 'promedio.xlsx')])
+        $this->post("/escenarios/$id/contenidos", ['archivo' => UploadedFile::fake()->createWithContent('promedio.xlsx', $originalBytes)])
             ->assertOk()->assertJsonPath('stored', false)->assertJsonPath('new_version', false);
-        $this->post("/api/escenarios/$id/datos/actualizar", ['archivo' => $this->file('happy', 'promedio.xlsx')])
+        $this->post("/escenarios/$id/contenidos", ['archivo' => $this->file('happy', 'promedio.xlsx')])
             ->assertCreated()->assertJsonPath('stored', true)->assertJsonPath('new_version', true);
         $this->getJson("/api/escenarios/$id/datos")->assertJsonPath('datos.emociones_promedio.version', '1.1');
 
         $other = User::factory()->create();
         $other->assignRole('cliente');
         $this->actingAs($other);
-        $this->getJson("/api/escenarios/$id/datos")->assertForbidden();
-        $this->post("/api/escenarios/$id/datos/actualizar", ['archivo' => $this->file()])->assertForbidden();
+        $this->getJson("/api/escenarios/$id/datos")->assertOk();
+        $this->app['auth']->forgetGuards();
+        $manifest = $this->getJson("/api/escenarios/$id/versiones-datos?tipo=emociones_promedio&version_actual=1.0")
+            ->assertOk()->assertJsonPath('estado', 'actualizacion_disponible')
+            ->assertJsonPath('actualizacion_disponible', true)->assertJsonPath('version', '1.1');
+        $this->getJson($manifest->json('url_datos'))->assertOk()
+            ->assertJsonPath('version', '1.1')->assertJsonPath('datos.0.emocion_ganadora_prom', 'happy');
+        $this->getJson("/api/escenarios/$id/versiones-datos?tipo=emociones_promedio&version_actual=1.1")
+            ->assertOk()->assertJsonPath('estado', 'sin_cambios')->assertJsonPath('actualizacion_disponible', false);
+        $this->postJson("/api/escenarios/$id/datos/actualizar", [])->assertNotFound();
     }
 
     public function test_reference_workbook_when_provided(): void

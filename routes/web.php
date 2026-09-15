@@ -22,47 +22,39 @@ Route::get('/login', [LoginController::class, 'log_in'])->name('login');
 Route::post('/log-in', [LoginController::class, 'login'])->name('login.submit');
 
 Route::middleware('auth')->group(function () {
+    Route::get('/session-user', [LoginController::class, 'me'])->name('session.user');
     Route::post('/log-out', [LoginController::class, 'logout'])->name('logout');
-    Route::get('/api/me', [LoginController::class, 'me'])->name('session.user');
 
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard.index');
     Route::get('/resultados', [ResultadosController::class, 'index'])->name('resultados.index');
     Route::get('/emociones', [EmocionesController::class, 'index'])->name('emociones.index');
-    Route::get('/api/emociones', [EmocionesController::class, 'data'])->name('emociones.data');
-    Route::get('/api/emociones/{meeting}', [EmocionesController::class, 'detail'])->whereNumber('meeting')->name('emociones.detail');
+    Route::post('/emociones/{meeting}/miembros', [EmocionesController::class, 'invite'])->whereNumber('meeting')->middleware('permission:emociones.invitar')->name('emociones.members.store');
+    Route::delete('/emociones/{meeting}/miembros/{user}', [EmocionesController::class, 'removeMember'])->whereNumber('meeting')->middleware('permission:emociones.invitar')->name('emociones.members.destroy');
     Route::get('/escenarios', [EscenariosController::class, 'index'])->middleware('permission:escenarios.leer')->name('escenarios.index');
     Route::get('/escenarios/{escenario}', [EscenariosController::class, 'show'])->middleware('permission:escenarios.leer')->name('escenarios.show');
-    Route::get('/api/escenarios/{escenario}/resultados-solares', [EscenariosController::class, 'solarResults'])->middleware('permission:escenarios.leer')->name('escenarios.solar');
-    Route::get('/api/escenarios/{escenario}/versiones-datos', [\App\Http\Controllers\DataVersionsController::class, 'manifest'])->middleware('permission:escenarios.leer')->name('datos.versiones');
-    Route::get('/api/escenarios/{escenario}/datos', [\App\Http\Controllers\DataVersionsController::class, 'overview'])->middleware('permission:escenarios.leer')->name('datos.overview');
-    Route::get('/api/escenarios/{escenario}/emociones-promedio', [\App\Http\Controllers\DataVersionsController::class, 'averages'])->middleware('permission:escenarios.leer')->name('datos.emociones');
-    Route::get('/api/escenarios/{escenario}/solar', [\App\Http\Controllers\DataVersionsController::class, 'solar'])->middleware('permission:escenarios.leer')->name('datos.solar');
-    Route::get('/api/escenarios/{escenario}', [EscenariosController::class, 'detail'])->middleware('permission:escenarios.leer')->name('escenarios.detail');
     Route::post('/escenarios-store', [EscenariosController::class, 'store'])->middleware('permission:escenarios.crear')->name('escenarios.store');
     Route::put('/escenarios/{escenario}', [EscenariosController::class, 'update'])->middleware('scenario.access:owner,supervisor')->name('escenarios.update');
     Route::post('/escenarios/{escenario}/contenidos', [EscenariosController::class, 'uploadContent'])->middleware('scenario.access:owner')->name('escenarios.contents.store');
-    Route::post('/api/escenarios/{escenario}/datos/actualizar', [EscenariosController::class, 'uploadContent'])->middleware('scenario.access:owner')->name('datos.actualizar');
     Route::post('/escenarios/{escenario}/members', [EscenariosController::class, 'invite'])->middleware('scenario.access:owner')->name('escenarios.members.store');
     Route::delete('/escenarios/{escenario}/members/{user}', [EscenariosController::class, 'removeMember'])->middleware('scenario.access:owner')->name('escenarios.members.destroy');
     Route::get('/escenarios/{escenario}/contenidos/{contenido}/download', [EscenariosController::class, 'downloadContent'])->middleware('permission:archivos.leer')->name('escenarios.contents.download');
     Route::get('/escenarios/{escenario}/download', [EscenariosController::class, 'download'])->middleware('permission:archivos.leer')->name('escenarios.download');
     Route::delete('/escenarios/{escenario}', [EscenariosController::class, 'destroy'])->name('escenarios.destroy');
-    Route::get('/api/escenarios', [EscenariosController::class, 'data'])->middleware('permission:escenarios.leer')->name('escenarios.data');
 
     Route::middleware('role:admin')->group(function () {
+        Route::get('/users-data', [UserController::class, 'data'])->name('users.data');
         Route::get('/users-list', [UserController::class, 'list'])->name('users.list');
         Route::get('/users-create', [UserController::class, 'index'])->name('users.create');
         Route::get('/users/{user}', [UserController::class, 'show'])->name('users.show');
         Route::post('/users-register', [UserController::class, 'store'])->name('users.register');
         Route::put('/users-update/{user}', [UserController::class, 'update'])->name('users.update');
-        Route::get('/api/users', [UserController::class, 'data'])->name('users.data');
 
+        Route::get('/roles-data', [RolesController::class, 'data'])->name('roles.data');
         Route::get('/roles-list', [RolesController::class, 'list'])->name('roles.list');
         Route::get('/roles-create', [RolesController::class, 'index'])->name('roles.create');
         Route::get('/roles/{rol}', [RolesController::class, 'show'])->name('roles.show');
         Route::post('/roles-register', [RolesController::class, 'store'])->name('roles.register');
         Route::put('/roles-update/{rol}', [RolesController::class, 'update'])->name('roles.update');
-        Route::get('/api/roles', [RolesController::class, 'data'])->name('roles.data');
     });
 });
 

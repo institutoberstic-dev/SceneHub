@@ -41,6 +41,17 @@ class LoginController extends Controller
         ]);
     }
 
+    public function me()
+    {
+        $user = Auth::user();
+
+        return response()->json([
+            ...$user->only(['id', 'name', 'email']),
+            'roles' => $user->getRoleNames()->values(),
+            'permissions' => $user->getAllPermissions()->pluck('name')->values(),
+        ]);
+    }
+
     public function logout(Request $request)
     {
         Auth::logout();
@@ -50,14 +61,4 @@ class LoginController extends Controller
         return response()->json(['success' => true]);
     }
 
-    public function me(Request $request)
-    {
-        $user = $request->user();
-
-        return response()->json([
-            ...$user->only(['id', 'name', 'email']),
-            'roles' => $user->getRoleNames()->values(),
-            'permissions' => $user->getAllPermissions()->pluck('name')->values(),
-        ]);
-    }
 }

@@ -125,7 +125,7 @@ class ScenarioEmotionImportTest extends TestCase
         $this->assertDirectoryDoesNotExist($this->temporaryStorage."/app/public/escenarios/$id-prueba/1.1");
     }
 
-    public function test_no_detection_is_preserved_and_other_users_cannot_read(): void
+    public function test_no_detection_is_preserved_and_other_users_can_read(): void
     {
         $row = $this->row();
         $row['nivel_atencion'] = $row['emocion_ganadora'] = 'SIN DETECCION';
@@ -135,8 +135,8 @@ class ScenarioEmotionImportTest extends TestCase
         $other = User::factory()->create();
         $other->assignRole('cliente');
         $this->actingAs($other)->getJson('/api/emociones')->assertOk()->assertJsonPath('meetings.0.title', 'Webinar de la API');
-        $this->getJson('/api/emociones/10')->assertOk()->assertJsonPath('details.total', 0)->assertJsonPath('averages.total', 0);
-        $this->getJson("/api/emociones/10?escenario_id=$id")->assertNotFound();
+        $this->getJson('/api/emociones/10')->assertOk()->assertJsonPath('details.total', 1)->assertJsonPath('averages.total', 0);
+        $this->getJson("/api/emociones/10?escenario_id=$id")->assertOk();
     }
 
     public function test_disk_failure_rolls_back_import_and_scenario(): void

@@ -10,6 +10,7 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class ScenarioSolarImport
 {
+    public const OFFICIAL_FILENAME = 'Resultados caso 1.xlsx';
     public const HEADERS = ['Hora', 'Caudal (m3/h)', 'Radiación solar (W/m2)', 'Teperatura (°C)', 'Velocidad del viento (m/s)', 'Potencia solar (W)', 'Potencia neta (W)', 'Energía almacenada (W)', 'Consumo planta (W)', 'Agua desalinizada (m3)', 'Salmuera (m3)', 'Lodos gruesos (N.º paquetes de 10 kg)', 'Lodos finos (N.º paquetes de 10 kg)'];
     public const FIELDS = ['tiempo_minutos', 'caudal', 'radiacion_solar', 'temperatura', 'velocidad_viento', 'potencia_solar', 'potencia_neta', 'energia_almacenada', 'consumo_planta', 'agua_desalinizada', 'salmuera', 'lodos_gruesos', 'lodos_finos'];
 
@@ -21,12 +22,18 @@ class ScenarioSolarImport
 
     public function read(?UploadedFile $file): ?array
     {
-        if (! $file || ! in_array(strtolower($file->getClientOriginalExtension()), ['xlsx', 'xls'])) return null;
+        if (! $file) return null;
+        if ($file->getClientOriginalName() !== self::OFFICIAL_FILENAME) {
+            $this->fail('El archivo debe llamarse exactamente "'.self::OFFICIAL_FILENAME.'".');
+        }
+        if (strtolower($file->getClientOriginalExtension()) !== 'xlsx') {
+            $this->fail('El archivo solar debe estar en formato XLSX.');
+        }
         $book = null;
         try {
             $reader = IOFactory::createReader(IOFactory::identify($file->getRealPath()));
             $names = $reader->listWorksheetNames($file->getRealPath());
-            $wanted = ['minutos' => 1, 'cada5min' => 5, 'cada10min' => 10];
+            $wanted = ['minutos' => 1, 'cada5min' => 5, 'cada10min' => 10, 'horas' => 60];
             $found = [];
             foreach ($names as $name) {
                 $key = $this->normalize($name);
@@ -35,8 +42,8 @@ class ScenarioSolarImport
                     $found[$key] = $name;
                 }
             }
-            if (! $found) return null;
-            if (count($found) !== 3) $this->fail('Faltan hojas solares: '.implode(', ', array_diff(array_keys($wanted), array_keys($found))).'.');
+            if (! $found) $this->fail('El libro no contiene las hojas solares oficiales.');
+            if (count($found) !== count($wanted)) $this->fail('Faltan hojas solares: '.implode(', ', array_diff(array_keys($wanted), array_keys($found))).'.');
             $reader->setReadDataOnly(true);
             $reader->setLoadSheetsOnly(array_values($found));
             $book = $reader->load($file->getRealPath());
@@ -62,6 +69,7 @@ class ScenarioSolarImport
                         }
                         if (! is_numeric($value) || ! is_finite((float) $value)) $this->fail("Hoja $name, fila ".($index + 2).": $field debe ser numérico, sin fórmulas.");
                         if (($i === 0 || $i >= 11) && ((float) $value < 0 || floor((float) $value) != (float) $value || (float) $value > 4294967295)) $this->fail("Hoja $name: tiempo y paquetes deben ser enteros no negativos.");
+                        if ($i === 0 && $key === 'horas') $value = (float) $value * 60;
                         $row[$field] = ($i === 0 || $i >= 11) ? (int) $value : (float) $value;
                     }
                     if ($row['tiempo_minutos'] % $wanted[$key] !== 0 || isset($seen[$row['tiempo_minutos']])) $this->fail("Hoja $name: tiempo duplicado o incompatible con el intervalo.");

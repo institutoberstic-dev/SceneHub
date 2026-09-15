@@ -8,6 +8,13 @@ use Illuminate\Validation\Rule;
 
 class UserController extends Controller
 {
+    public function data()
+    {
+        return response()->json(User::with('roles:id,name')
+            ->latest()
+            ->get(['id', 'name', 'email', 'created_at']));
+    }
+
     public function index()
     {
         return view('app');
@@ -21,16 +28,6 @@ class UserController extends Controller
     public function show(User $user)
     {
         return view('app');
-    }
-
-    public function data()
-    {
-        return response()->json(
-            User::query()
-                ->with('roles:id,name')
-                ->latest()
-                ->get(['id', 'name', 'email', 'created_at'])
-        );
     }
 
     public function store(Request $request)

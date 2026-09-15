@@ -2,6 +2,7 @@ import { CheckCircle2, Folder, Grid2X2, Info, List, MoreHorizontal, Pencil, Plus
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Modal from '../components/Modal';
+import Pagination from '../components/Pagination.jsx';
 import { api, csrfRequest, errorMessage } from '../http';
 
 const tones = ['blue', 'green', 'purple', 'cyan'];
@@ -21,6 +22,8 @@ export default function ScenariosPage() {
     const [submitting, setSubmitting] = useState(false);
     const [query, setQuery] = useState('');
     const [feedback, setFeedback] = useState(null);
+    const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(12);
     const [form, setForm] = useState({ nombre: '', descripcion: '', archivo: null });
     const [uploadOpen, setUploadOpen] = useState(false);
     const [uploadForm, setUploadForm] = useState({ escenario_id: '', nombre: '', archivo: null });
@@ -41,13 +44,16 @@ export default function ScenariosPage() {
 
     useEffect(() => { load(); }, [load]);
     useEffect(() => {
-        api.get('/api/me').then(({ data }) => {
+        api.get('/session-user').then(({ data }) => {
             sessionStorage.setItem('scenehub_user', JSON.stringify(data));
             setUser(data);
+        }).catch(() => {
+            // La sesión ya está disponible en sessionStorage; esta consulta no genera alertas visibles.
         });
     }, []);
 
     const visibleScenarios = useMemo(() => scenarios.filter((scenario) => scenario.nombre.toLowerCase().includes(query.toLowerCase())), [query, scenarios]);
+    const pagedScenarios = visibleScenarios.slice((page - 1) * pageSize, page * pageSize);
     const accessLevelFor = useCallback((scenario) => {
         if (isAdmin) return 'admin';
         if (scenario.owner_id === user?.id) return 'owner';
@@ -153,23 +159,24 @@ export default function ScenariosPage() {
     return (
         <div className="page-stack">
             <section className="page-heading">
-                <div><span className="eyebrow">Biblioteca de contenidos</span><h1>Carga de resultados del escenario</h1><p>Gestiona escenarios y consulta los archivos, responsables y versiones contenidos en cada uno.</p></div>
+                <div><span className="eyebrow">Biblioteca de contenidos</span><h1>Carga de resultados solares</h1><p>Cada escenario admite el libro oficial Resultados caso 1.xlsx y conserva sus versiones de simulación solar.</p></div>
                 <div className="heading-actions">{canCreate && <button className="primary-button" type="button" onClick={() => setModalOpen(true)}><Plus size={18} /> Agregar escenario</button>}{versionableScenarios.length > 0 && <button className="secondary-button" type="button" onClick={() => setUploadOpen(true)}><UploadCloud size={18} /> Subir nueva versión</button>}</div>
             </section>
 
             {feedback && <div className={`alert alert--${feedback.type}`}>{feedback.type === 'success' ? <CheckCircle2 size={18} /> : <Info size={18} />}{feedback.text}</div>}
 
             <section className="content-card">
-                <div className="toolbar"><label className="inline-search"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar escenario" /></label><div className="view-switch"><button className="active" type="button"><Grid2X2 size={17} /></button><button type="button"><List size={18} /></button></div></div>
+                <div className="toolbar"><label className="inline-search"><Search size={17} /><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Buscar escenario" /></label><div className="view-switch"><button className="active" type="button"><Grid2X2 size={17} /></button><button type="button"><List size={18} /></button></div></div>
                 <div className="scenario-grid">
                     {loading && <div className="loading-card">Cargando escenarios…</div>}
                     {!loading && visibleScenarios.length === 0 && <div className="empty-scenario"><span><Folder size={22} /></span><strong>Sin escenarios accesibles</strong><p>Un cliente puede crear escenarios o participar como supervisor o editor mediante invitación.</p></div>}
-                    {visibleScenarios.map((scenario, index) => { const accessLevel = accessLevelFor(scenario); return <article className="scenario-card scenario-card--clickable" key={scenario.id} onClick={() => navigate(`/escenarios/${scenario.id}`)}><div className="scenario-card__top"><span className={`folder-icon folder-icon--${tones[index % tones.length]}`}><Folder size={25} /></span><span className="scenario-card__actions">{['admin', 'owner', 'supervisor'].includes(accessLevel) && <button className="icon-button" type="button" onClick={(event) => { event.stopPropagation(); openEdit(scenario); }} aria-label={`Actualizar ${scenario.nombre}`} title={isAdmin ? 'Corregir nombre' : 'Actualizar escenario'}><Pencil size={17} /></button>}{accessLevel === 'owner' && <button className="icon-button" type="button" onClick={(event) => { event.stopPropagation(); setAccessScenario(scenario); }} aria-label={`Gestionar accesos de ${scenario.nombre}`} title="Gestionar accesos"><MoreHorizontal size={19} /></button>}</span></div><strong>{scenario.nombre}</strong><p className="scenario-card__description">{scenario.descripcion || 'Sin descripción'}</p><span className="status-pill status-pill--green"><i className="status-dot" /> {scenario.estado}</span><span className="status-pill status-pill--purple">Rol: {accessLevel}</span><footer><span>{scenario.contenidos_count} elementos · V{scenario.versiones}</span><span><UserRound size={14} /> {scenario.owner?.name || 'Sin owner'}</span></footer></article>; })}
+                    {pagedScenarios.map((scenario, index) => { const accessLevel = accessLevelFor(scenario); return <article className="scenario-card scenario-card--clickable" key={scenario.id} onClick={() => navigate(`/escenarios/${scenario.id}`)}><div className="scenario-card__top"><span className={`folder-icon folder-icon--${tones[index % tones.length]}`}><Folder size={25} /></span><span className="scenario-card__actions">{['admin', 'owner', 'supervisor'].includes(accessLevel) && <button className="icon-button" type="button" onClick={(event) => { event.stopPropagation(); openEdit(scenario); }} aria-label={`Actualizar ${scenario.nombre}`} title={isAdmin ? 'Corregir nombre' : 'Actualizar escenario'}><Pencil size={17} /></button>}{accessLevel === 'owner' && <button className="icon-button" type="button" onClick={(event) => { event.stopPropagation(); setAccessScenario(scenario); }} aria-label={`Gestionar accesos de ${scenario.nombre}`} title="Gestionar accesos"><MoreHorizontal size={19} /></button>}</span></div><strong>{scenario.nombre}</strong><p className="scenario-card__description">{scenario.descripcion || 'Sin descripción'}</p><span className="status-pill status-pill--green"><i className="status-dot" /> {scenario.estado}</span><span className="status-pill status-pill--purple">Rol: {accessLevel}</span><footer><span>{scenario.contenidos_count} elementos · V{scenario.versiones}</span><span><UserRound size={14} /> {scenario.owner?.name || 'Sin owner'}</span></footer></article>; })}
                 </div>
+                {!loading && visibleScenarios.length > 0 && <Pagination total={visibleScenarios.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1); }} />}
             </section>
 
             <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Nuevo escenario" subtitle="El usuario actual quedará registrado como owner del escenario.">
-                <form className="modal-form" onSubmit={submit}><label className="field-label" htmlFor="scenario-name">Nombre del escenario</label><input className="text-input" id="scenario-name" required maxLength="255" value={form.nombre} onChange={(event) => setForm({ ...form, nombre: event.target.value })} placeholder="Ej. Escenario Base PEM" /><label className="field-label" htmlFor="scenario-description">Descripción del escenario</label><textarea className="text-input text-area" id="scenario-description" required maxLength="2000" value={form.descripcion} onChange={(event) => setForm({ ...form, descripcion: event.target.value })} placeholder="Describe el propósito, alcance o contenido del escenario" /><small className="field-help">{form.descripcion.length}/2000 caracteres</small><label className="upload-zone" htmlFor="scenario-file"><UploadCloud size={30} /><strong>{form.archivo?.name || 'Selecciona un archivo o paquete ZIP'}</strong><span>Tamaño máximo: 50 MB</span><input id="scenario-file" type="file" onChange={(event) => setForm({ ...form, archivo: event.target.files[0] || null })} /></label><div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setModalOpen(false)}>Cancelar</button><button className="primary-button" type="submit" disabled={submitting}><Plus size={18} /> {submitting ? 'Guardando…' : 'Crear escenario'}</button></div></form>
+                <form className="modal-form" onSubmit={submit}><label className="field-label" htmlFor="scenario-name">Nombre del escenario</label><input className="text-input" id="scenario-name" required maxLength="255" value={form.nombre} onChange={(event) => setForm({ ...form, nombre: event.target.value })} placeholder="Ej. Escenario 1" /><label className="field-label" htmlFor="scenario-description">Descripción del escenario</label><textarea className="text-input text-area" id="scenario-description" required maxLength="2000" value={form.descripcion} onChange={(event) => setForm({ ...form, descripcion: event.target.value })} placeholder="Describe la simulación solar" /><small className="field-help">{form.descripcion.length}/2000 caracteres</small><label className="upload-zone" htmlFor="scenario-file"><UploadCloud size={30} /><strong>{form.archivo?.name || 'Selecciona Resultados caso 1.xlsx'}</strong><span>Libro XLSX oficial · máximo 50 MB</span><input id="scenario-file" type="file" accept=".xlsx" required onChange={(event) => setForm({ ...form, archivo: event.target.files[0] || null })} /></label><div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setModalOpen(false)}>Cancelar</button><button className="primary-button" type="submit" disabled={submitting}><Plus size={18} /> {submitting ? 'Guardando…' : 'Crear escenario'}</button></div></form>
             </Modal>
 
             <Modal open={Boolean(accessScenario)} onClose={() => setAccessScenario(null)} title="Gestionar acceso" subtitle={accessScenario ? `Invita un usuario a ${accessScenario.nombre}.` : ''}>
@@ -177,7 +184,7 @@ export default function ScenariosPage() {
             </Modal>
 
             <Modal open={uploadOpen} onClose={() => setUploadOpen(false)} title="Cargar resultado" subtitle="Añade un archivo a un escenario existente y crea automáticamente su siguiente versión.">
-                <form className="modal-form" onSubmit={submitUpload}><label className="field-label" htmlFor="upload-scenario">Escenario</label><select className="text-input" id="upload-scenario" required value={uploadForm.escenario_id} onChange={(event) => setUploadForm({ ...uploadForm, escenario_id: event.target.value })}><option value="">Selecciona un escenario</option>{versionableScenarios.map((scenario) => <option value={scenario.id} key={scenario.id}>{scenario.nombre}</option>)}</select><label className="field-label" htmlFor="result-name">Nombre del resultado</label><input className="text-input" id="result-name" maxLength="255" value={uploadForm.nombre} onChange={(event) => setUploadForm({ ...uploadForm, nombre: event.target.value })} placeholder="Opcional; se usará el nombre del archivo si queda vacío" /><label className="upload-zone" htmlFor="result-file"><UploadCloud size={30} /><strong>{uploadForm.archivo?.name || 'Selecciona el archivo del resultado'}</strong><span>Obligatorio · Tamaño máximo: 50 MB</span><input id="result-file" type="file" required onChange={(event) => setUploadForm({ ...uploadForm, archivo: event.target.files[0] || null })} /></label><div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setUploadOpen(false)}>Cancelar</button><button className="primary-button" type="submit" disabled={submitting}><UploadCloud size={18} /> {submitting ? 'Cargando…' : 'Cargar resultado'}</button></div></form>
+                <form className="modal-form" onSubmit={submitUpload}><label className="field-label" htmlFor="upload-scenario">Escenario</label><select className="text-input" id="upload-scenario" required value={uploadForm.escenario_id} onChange={(event) => setUploadForm({ ...uploadForm, escenario_id: event.target.value })}><option value="">Selecciona un escenario</option>{versionableScenarios.map((scenario) => <option value={scenario.id} key={scenario.id}>{scenario.nombre}</option>)}</select><label className="upload-zone" htmlFor="result-file"><UploadCloud size={30} /><strong>{uploadForm.archivo?.name || 'Selecciona Resultados caso 1.xlsx'}</strong><span>Reemplaza o publica la siguiente versión solar</span><input id="result-file" type="file" accept=".xlsx" required onChange={(event) => setUploadForm({ ...uploadForm, archivo: event.target.files[0] || null })} /></label><div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setUploadOpen(false)}>Cancelar</button><button className="primary-button" type="submit" disabled={submitting}><UploadCloud size={18} /> {submitting ? 'Cargando…' : 'Cargar resultado solar'}</button></div></form>
             </Modal>
 
             <Modal open={Boolean(editScenario)} onClose={() => setEditScenario(null)} title="Actualizar escenario" subtitle={editScenario ? `Edita los datos de ${editScenario.nombre}. El archivo es opcional.` : ''}>

@@ -19,14 +19,10 @@ class RolesAndPermissionsSeeder extends Seeder
         $permissions = collect([
             'usuarios.gestionar',
             'roles.gestionar',
-            'escenarios.leer',
-            'escenarios.crear',
-            'escenarios.actualizar',
-            'escenarios.eliminar',
-            'escenarios.invitar',
-            'escenarios.versionar',
-            'archivos.leer',
-            'archivos.actualizar',
+            'escenarios.leer', 'escenarios.crear', 'escenarios.actualizar',
+            'escenarios.eliminar', 'escenarios.invitar', 'escenarios.versionar',
+            'archivos.leer', 'archivos.actualizar',
+            'emociones.leer', 'emociones.cargar', 'emociones.invitar',
         ])->mapWithKeys(
             fn (string $name) => [
                 $name => Permission::findOrCreate($name, 'web'),
@@ -39,13 +35,30 @@ class RolesAndPermissionsSeeder extends Seeder
         $admin->syncPermissions($permissions->only([
             'usuarios.gestionar', 'roles.gestionar', 'escenarios.leer',
             'escenarios.actualizar', 'escenarios.eliminar', 'archivos.leer',
+            'emociones.leer', 'emociones.cargar', 'emociones.invitar',
         ])->values());
 
         $client->syncPermissions($permissions->only([
             'escenarios.leer', 'escenarios.crear', 'escenarios.actualizar',
             'escenarios.eliminar', 'escenarios.invitar', 'escenarios.versionar',
             'archivos.leer', 'archivos.actualizar',
+            'emociones.leer',
         ])->values());
+
+        $scenarioManager = Role::findOrCreate('gestor_escenarios', 'web');
+        $scenarioManager->syncPermissions($permissions->only([
+            'escenarios.leer', 'escenarios.crear', 'escenarios.actualizar',
+            'escenarios.eliminar', 'escenarios.invitar', 'escenarios.versionar',
+            'archivos.leer', 'archivos.actualizar',
+        ])->values());
+
+        $emotionManager = Role::findOrCreate('gestor_emociones', 'web');
+        $emotionManager->syncPermissions($permissions->only([
+            'emociones.leer', 'emociones.cargar', 'emociones.invitar',
+        ])->values());
+
+        $viewer = Role::findOrCreate('consulta', 'web');
+        $viewer->syncPermissions($permissions->only(['escenarios.leer', 'archivos.leer', 'emociones.leer'])->values());
 
         foreach (['owner', 'supervisor', 'collaborator'] as $legacyRoleName) {
             $legacyRole = Role::query()->where('name', $legacyRoleName)->where('guard_name', 'web')->first();

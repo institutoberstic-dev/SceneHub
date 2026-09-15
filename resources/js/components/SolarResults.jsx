@@ -13,7 +13,7 @@ export default function SolarResults() {
     const [files, setFiles] = useState([]);
     const [file, setFile] = useState('');
     const [interval, setInterval] = useState(1);
-    const [filters, setFilters] = useState({ 1: defaults(), 5: defaults(), 10: defaults() });
+    const [filters, setFilters] = useState({ 1: defaults(), 5: defaults(), 10: defaults(), 60: defaults() });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [reload, setReload] = useState(0);
@@ -31,7 +31,7 @@ export default function SolarResults() {
     useEffect(() => {
         const controller = new AbortController();
         setFiles([]); setFile(''); setError('');
-        setFilters({ 1: defaults(), 5: defaults(), 10: defaults() });
+        setFilters({ 1: defaults(), 5: defaults(), 10: defaults(), 60: defaults() });
         if (!scenario) { setLoading(false); return () => controller.abort(); }
         setLoading(true);
         api.get(`/api/escenarios/${scenario}/resultados-solares`, { signal: controller.signal }).then(({ data }) => {
@@ -64,9 +64,9 @@ export default function SolarResults() {
         <div className="section-heading section-heading--inside"><div><h2>Simulación solar</h2><p>Explora cada hoja y los cambios observados en su intervalo.</p></div><button type="button" className="secondary-button" onClick={() => setReload(value => value + 1)}>Actualizar</button></div>
         <div className="solar-filters">
             <label>Escenario<select className="text-input" value={scenario} onChange={e => setScenario(e.target.value)}><option value="">Selecciona un escenario</option>{scenarios.map(item => <option key={item.id} value={item.id}>{item.nombre}{item.version_datos ? ` (v${item.version_datos})` : ''}</option>)}</select></label>
-            <label>Archivo<select className="text-input" disabled={!files.length || loading} value={file} onChange={e => { setFile(e.target.value); setFilters({ 1: defaults(), 5: defaults(), 10: defaults() }); }}><option value="">Sin archivo seleccionado</option>{files.map(item => <option key={item.id} value={item.id}>{item.nombre}{item.version_datos ? ` (v${item.version_datos})` : ''}</option>)}</select></label>
+            <label>Archivo<select className="text-input" disabled={!files.length || loading} value={file} onChange={e => { setFile(e.target.value); setFilters({ 1: defaults(), 5: defaults(), 10: defaults(), 60: defaults() }); }}><option value="">Sin archivo seleccionado</option>{files.map(item => <option key={item.id} value={item.id}>{item.nombre}{item.version_datos ? ` (v${item.version_datos})` : ''}</option>)}</select></label>
         </div>
-        <div className="detail-tabs solar-tabs" aria-label="Hojas de muestreo">{[1, 5, 10].map(value => <button type="button" key={value} aria-pressed={interval === value} className={interval === value ? 'active' : ''} onClick={() => setInterval(value)}>{value === 1 ? 'Por minuto' : `Cada ${value} minutos`}</button>)}</div>
+        <div className="detail-tabs solar-tabs" aria-label="Hojas de muestreo">{[1, 5, 10, 60].map(value => <button type="button" key={value} aria-pressed={interval === value} className={interval === value ? 'active' : ''} onClick={() => setInterval(value)}>{value === 1 ? 'Por minuto' : value === 60 ? 'Por hora' : `Cada ${value} minutos`}</button>)}</div>
         <div className="solar-body">
             <div className="solar-filters">
                 <label>Variable<select className="text-input" value={filter.variable} onChange={e => update({ variable: e.target.value, event: '', threshold: '0' })}>{variables.map(([key, text, suffix]) => <option key={key} value={key}>{text} ({suffix})</option>)}</select></label>

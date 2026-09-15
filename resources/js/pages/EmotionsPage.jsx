@@ -19,15 +19,41 @@ export default function EmotionsPage() {
     const [meetings, setMeetings] = useState([]);
     const [loading, setLoading] = useState(true);
     const [failure, setFailure] = useState('');
+    const [file, setFile] = useState(null);
+    const [uploading, setUploading] = useState(false);
+    const [message, setMessage] = useState('');
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(15);
+    const [reload, setReload] = useState(0);
 
     useEffect(() => {
         api.get('/api/emociones')
             .then(({ data }) => setMeetings(Array.isArray(data?.meetings) ? data.meetings : []))
             .catch((error) => setFailure(errorMessage(error, 'No fue posible consultar las emociones.')))
             .finally(() => setLoading(false));
-    }, []);
+    }, [reload]);
+
+    const upload = async (event) => {
+        event.preventDefault();
+        if (!file) return;
+        setUploading(true);
+        setFailure('');
+        setMessage('');
+        const body = new FormData();
+        body.append('archivo', file);
+        try {
+            const { data } = await api.post('/api/emociones/datos', body, { headers: { 'Content-Type': 'multipart/form-data' } });
+            setMessage(data.message || 'Datos emocionales cargados correctamente.');
+            setFile(null);
+            event.target.reset();
+            setPage(1);
+            setReload(value => value + 1);
+        } catch (error) {
+            setFailure(errorMessage(error, 'No fue posible cargar los resultados emocionales.'));
+        } finally {
+            setUploading(false);
+        }
+    };
 
     return (
         <div className="page-stack">
@@ -40,6 +66,18 @@ export default function EmotionsPage() {
             </section>
 
             {failure && <div className="alert alert--error">{failure}</div>}
+            {message && <div className="alert alert--success">{message}</div>}
+
+            <section className="content-card emotion-upload-card">
+                <div className="page-heading page-heading--compact">
+                    <div><span className="eyebrow">Carga de datos</span><h2>Resultados emocionales</h2><p>Carga el archivo completo o el promedio. Sus identificadores enlazan automáticamente los datos con cada webinar.</p></div>
+                </div>
+                <form className="solar-filters solar-filters--upload" onSubmit={upload}>
+                    <label>Archivo de resultados<input className="text-input" type="file" accept=".xlsx,.xls" required onChange={event => setFile(event.target.files[0] || null)} /></label>
+                    <button className="primary-button" type="submit" disabled={uploading || !file}>{uploading ? 'Cargando…' : 'Cargar resultados'}</button>
+                </form>
+                <p className="field-help">El archivo debe incluir el identificador del webinar en la columna <code>id_meeting</code>. La API asociará cada registro automáticamente.</p>
+            </section>
 
             <section className="emotion-grid" aria-label="Sesiones del módulo Emociones">
                 {loading && <div className="content-card loading-card emotion-grid__message">Cargando sesiones…</div>}
