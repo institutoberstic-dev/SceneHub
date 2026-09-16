@@ -1,4 +1,4 @@
-import { BarChart3, CheckCircle2, Clock3, File, Folder, FolderOpen, Plus, UploadCloud } from 'lucide-react';
+import { BarChart3, CheckCircle2, Clock3, File, Folder, FolderOpen, Plus, ShieldCheck, UploadCloud } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../http';
@@ -12,14 +12,23 @@ function formatSize(bytes = 0) {
 }
 
 export default function DashboardPage() {
+    let currentUser = null;
+    try { currentUser = JSON.parse(sessionStorage.getItem('scenehub_user') || 'null'); } catch { /* La sesión será validada por Laravel. */ }
+    const isAdmin = currentUser?.roles?.includes('admin');
+    const canAccessScenarios = isAdmin || currentUser?.permissions?.includes('escenarios.leer');
+    const canAccessEmotions = isAdmin || currentUser?.permissions?.includes('emociones.leer');
     const [scenarios, setScenarios] = useState([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        api.get('/api/escenarios')
+        if (!canAccessScenarios) {
+            setLoading(false);
+            return;
+        }
+        api.get('/escenarios-data')
             .then(({ data }) => setScenarios(data))
             .finally(() => setLoading(false));
-    }, []);
+    }, [canAccessScenarios]);
 
     const contents = useMemo(
         () => scenarios.flatMap((scenario) => (scenario.contenidos || []).map((item) => ({ ...item, scenario }))),
@@ -27,6 +36,17 @@ export default function DashboardPage() {
     );
     const versions = scenarios.reduce((total, scenario) => total + Number(scenario.versiones || 0), 0);
     const quickItems = contents.slice(0, 4);
+
+    if (!canAccessScenarios) {
+        return <div className="page-stack">
+            <section className="page-heading"><div><span className="eyebrow">Inicio</span><h1>Módulos disponibles</h1><p>Accede a los espacios habilitados por el administrador.</p></div></section>
+            <section className="content-card module-welcome">
+                {canAccessEmotions
+                    ? <><span className="metric-icon metric-icon--purple"><BarChart3 size={22} /></span><div><h2>Emociones</h2><p>Consulta webinars y resultados emocionales disponibles.</p><Link className="primary-button" to="/emociones">Abrir módulo</Link></div></>
+                    : <><span className="metric-icon"><ShieldCheck size={22} /></span><div><h2>Sin módulos habilitados</h2><p>Solicita al administrador acceso a Escenarios o Emociones.</p></div></>}
+            </section>
+        </div>;
+    }
 
     return (
         <div className="page-stack">

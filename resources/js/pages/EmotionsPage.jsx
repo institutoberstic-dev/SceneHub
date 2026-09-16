@@ -16,6 +16,9 @@ function meetingTime(value) {
 
 export default function EmotionsPage() {
     const navigate = useNavigate();
+    let currentUser = null;
+    try { currentUser = JSON.parse(sessionStorage.getItem('scenehub_user') || 'null'); } catch { /* Laravel volverá a validar la sesión. */ }
+    const canUpload = currentUser?.roles?.includes('admin') || currentUser?.permissions?.includes('emociones.cargar');
     const [meetings, setMeetings] = useState([]);
     const [loading, setLoading] = useState(true);
     const [failure, setFailure] = useState('');
@@ -28,7 +31,7 @@ export default function EmotionsPage() {
     const fileInput = useRef(null);
 
     useEffect(() => {
-        api.get('/api/emociones')
+        api.get('/emociones-data')
             .then(({ data }) => setMeetings(Array.isArray(data?.meetings) ? data.meetings : []))
             .catch((error) => setFailure(errorMessage(error, 'No fue posible consultar las emociones.')))
             .finally(() => setLoading(false));
@@ -43,7 +46,7 @@ export default function EmotionsPage() {
         const body = new FormData();
         body.append('archivo', file);
         try {
-            const { data } = await api.post('/api/emociones/datos', body, { headers: { 'Content-Type': 'multipart/form-data' } });
+            const { data } = await api.post('/emociones-data', body, { headers: { 'Content-Type': 'multipart/form-data' } });
             setMessage(data.message || 'Datos emocionales cargados correctamente.');
             setFile(null);
             event.target.reset();
@@ -69,7 +72,7 @@ export default function EmotionsPage() {
             {failure && <div className="alert alert--error" role="alert">{failure}</div>}
             {message && <div className="alert alert--success" role="status">{message}</div>}
 
-            <section className="content-card emotion-upload-card" aria-labelledby="emotion-upload-title">
+            {canUpload && <section className="content-card emotion-upload-card" aria-labelledby="emotion-upload-title">
                 <div className="emotion-upload-card__intro">
                     <span className="eyebrow">Carga de datos</span>
                     <h2 id="emotion-upload-title">Resultados emocionales</h2>
@@ -88,7 +91,7 @@ export default function EmotionsPage() {
                         <button className="primary-button" type="submit" disabled={uploading || !file}>{uploading ? <LoaderCircle className="upload-spinner" size={17} /> : <UploadCloud size={17} />}{uploading ? 'Cargando…' : 'Cargar resultados'}</button>
                     </div>
                 </form>
-            </section>
+            </section>}
 
             <section className="emotion-grid" aria-label="Sesiones del módulo Emociones">
                 {loading && <div className="content-card loading-card emotion-grid__message">Cargando sesiones…</div>}

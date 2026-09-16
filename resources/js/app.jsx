@@ -17,22 +17,29 @@ function ShellRoute({ children }) {
     return <AppLayout>{children}</AppLayout>;
 }
 
+function PermissionRoute({ permission, children }) {
+    let user = null;
+    try { user = JSON.parse(sessionStorage.getItem('scenehub_user') || 'null'); } catch { /* La ruta del servidor volverá a validar la sesión. */ }
+    const allowed = user?.roles?.includes('admin') || user?.permissions?.includes(permission);
+
+    return allowed ? children : <Navigate to="/dashboard" replace />;
+}
+
 function App() {
     return (
         <BrowserRouter>
             <Routes>
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/dashboard" element={<ShellRoute><DashboardPage /></ShellRoute>} />
-                <Route path="/escenarios" element={<ShellRoute><ScenariosPage /></ShellRoute>} />
-                <Route path="/escenarios/:id" element={<ShellRoute><ScenarioDetailPage /></ShellRoute>} />
-                <Route path="/resultados" element={<ShellRoute><ResultsPage /></ShellRoute>} />
-                <Route path="/emociones" element={<ShellRoute><EmotionsPage /></ShellRoute>} />
-                <Route path="/emociones/:id" element={<ShellRoute><EmotionDetailPage /></ShellRoute>} />
+                <Route path="/escenarios" element={<PermissionRoute permission="escenarios.leer"><ShellRoute><ScenariosPage /></ShellRoute></PermissionRoute>} />
+                <Route path="/escenarios/:id" element={<PermissionRoute permission="escenarios.leer"><ShellRoute><ScenarioDetailPage /></ShellRoute></PermissionRoute>} />
+                <Route path="/resultados" element={<PermissionRoute permission="escenarios.leer"><ShellRoute><ResultsPage /></ShellRoute></PermissionRoute>} />
+                <Route path="/emociones" element={<PermissionRoute permission="emociones.leer"><ShellRoute><EmotionsPage /></ShellRoute></PermissionRoute>} />
+                <Route path="/emociones/:id" element={<PermissionRoute permission="emociones.leer"><ShellRoute><EmotionDetailPage /></ShellRoute></PermissionRoute>} />
                 <Route path="/users-list" element={<ShellRoute><UsersPage /></ShellRoute>} />
                 <Route path="/users-create" element={<ShellRoute><UsersPage createOnLoad /></ShellRoute>} />
                 <Route path="/users/:id" element={<ShellRoute><UsersPage /></ShellRoute>} />
                 <Route path="/roles-list" element={<ShellRoute><RolesPage /></ShellRoute>} />
-                <Route path="/roles-create" element={<ShellRoute><RolesPage createOnLoad /></ShellRoute>} />
                 <Route path="/roles/:id" element={<ShellRoute><RolesPage /></ShellRoute>} />
                 <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>

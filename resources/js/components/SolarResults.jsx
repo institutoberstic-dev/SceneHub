@@ -22,7 +22,7 @@ export default function SolarResults() {
 
     useEffect(() => {
         const controller = new AbortController();
-        api.get('/api/escenarios', { signal: controller.signal }).then(({ data }) => {
+        api.get('/escenarios-data', { signal: controller.signal }).then(({ data }) => {
             setScenarios(data);
         }).catch(e => { if (!controller.signal.aborted) setError(errorMessage(e)); });
         return () => controller.abort();
@@ -34,7 +34,7 @@ export default function SolarResults() {
         setFilters({ 1: defaults(), 5: defaults(), 10: defaults(), 60: defaults() });
         if (!scenario) { setLoading(false); return () => controller.abort(); }
         setLoading(true);
-        api.get(`/api/escenarios/${scenario}/resultados-solares`, { signal: controller.signal }).then(({ data }) => {
+        api.get(`/escenarios-data/${scenario}/resultados-solares`, { signal: controller.signal }).then(({ data }) => {
             if (!Array.isArray(data.archivos)) throw new Error('Formato de respuesta inesperado.');
             setFiles(data.archivos);
             setFile(String(data.archivos[0]?.id ?? ''));

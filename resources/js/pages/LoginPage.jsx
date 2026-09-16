@@ -31,7 +31,9 @@ export default function LoginPage() {
     const navigate = useNavigate();
     const [showPassword, setShowPassword] = useState(false);
     const [submitting, setSubmitting] = useState(false);
-    const [message, setMessage] = useState('');
+    const [message, setMessage] = useState(() => new URLSearchParams(window.location.search).has('disabled')
+        ? 'Tu cuenta está inhabilitada. Contacta al administrador.'
+        : '');
     const [form, setForm] = useState({ email: '', password: '', remember: true });
 
     const submit = async (event) => {

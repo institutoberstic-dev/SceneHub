@@ -18,9 +18,9 @@ import { api, csrfRequest, errorMessage } from '../http';
 
 const mainNavigation = [
     { label: 'Inicio', path: '/dashboard', icon: Home },
-    { label: 'Escenarios', path: '/escenarios', icon: FolderOpen },
-    { label: 'Resultados', path: '/resultados', icon: BarChart3 },
-    { label: 'Emociones', path: '/emociones', faIcon: 'fa-face-smile-beam' },
+    { label: 'Escenarios', path: '/escenarios', icon: FolderOpen, permission: 'escenarios.leer' },
+    { label: 'Resultados', path: '/resultados', icon: BarChart3, permission: 'escenarios.leer' },
+    { label: 'Emociones', path: '/emociones', faIcon: 'fa-face-smile-beam', permission: 'emociones.leer' },
 ];
 
 const adminNavigation = [
@@ -36,7 +36,6 @@ const pageMeta = {
     '/users-list': ['Administración', 'Usuarios'],
     '/users-create': ['Administración', 'Usuarios'],
     '/roles-list': ['Administración', 'Roles'],
-    '/roles-create': ['Administración', 'Roles'],
 };
 
 function storedUser() {
@@ -59,6 +58,7 @@ export default function AppLayout({ children }) {
         : pageMeta[location.pathname] || ['SceneHub', 'Módulo'];
     const [user, setUser] = useState(storedUser);
     const isAdmin = user?.roles?.includes('admin');
+    const canAccess = (permission) => !permission || isAdmin || user?.permissions?.includes(permission);
     const initials = user?.name
         ? user.name.split(' ').slice(0, 2).map((part) => part[0]).join('').toUpperCase()
         : 'SH';
@@ -122,7 +122,7 @@ export default function AppLayout({ children }) {
 
             <aside className={`sidebar ${menuOpen ? 'sidebar--open' : ''}`}>
                 <nav>
-                    {mainNavigation.map(({ label, path, icon: Icon, faIcon }) => (
+                    {mainNavigation.filter(({ permission }) => canAccess(permission)).map(({ label, path, icon: Icon, faIcon }) => (
                         <NavLink key={path} to={path} onClick={closeMenu} className={({ isActive }) => isActive ? 'nav-link nav-link--active' : 'nav-link'}>
                             {Icon ? <Icon size={20} /> : <i className={`fa-solid ${faIcon} nav-fa-icon`} aria-hidden="true" />}
                             <span>{label}</span>

@@ -10,7 +10,9 @@ class RolesController extends Controller
 {
     public function data()
     {
-        return response()->json(Role::withCount(['users', 'permissions'])
+        return response()->json(Role::with('permissions:id,name')
+            ->withCount(['users', 'permissions'])
+            ->whereIn('name', ['admin', 'usuario'])
             ->orderBy('name')
             ->get(['id', 'name', 'guard_name']));
     }

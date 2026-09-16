@@ -35,7 +35,7 @@ export default function ScenariosPage() {
     const load = useCallback(async () => {
         setLoading(true);
         try {
-            const { data } = await api.get('/api/escenarios');
+            const { data } = await api.get('/escenarios-data');
             setScenarios(data);
         } catch (error) {
             setFeedback({ type: 'error', text: errorMessage(error, 'No fue posible consultar los escenarios.') });

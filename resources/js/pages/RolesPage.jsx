@@ -1,19 +1,19 @@
-import { CheckCircle2, Info, KeyRound, Plus, Search, Shield, UserRoundCog, Users } from 'lucide-react';
+import { Info, KeyRound, Search, Shield, Users } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Modal from '../components/Modal';
-import Pagination from '../components/Pagination.jsx';
-import { api, csrfRequest, errorMessage } from '../http';
+import { api, errorMessage } from '../http';
 
-export default function RolesPage({ createOnLoad = false }) {
+const permissionLabels = {
+    'usuarios.gestionar': 'Administrar usuarios',
+    'roles.gestionar': 'Administrar accesos',
+    'escenarios.leer': 'Acceso a Escenarios',
+    'emociones.leer': 'Acceso a Emociones',
+};
+
+export default function RolesPage() {
     const [roles, setRoles] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [modalOpen, setModalOpen] = useState(createOnLoad);
-    const [submitting, setSubmitting] = useState(false);
     const [query, setQuery] = useState('');
-    const [feedback, setFeedback] = useState(null);
-    const [page, setPage] = useState(1);
-    const [pageSize, setPageSize] = useState(15);
-    const [form, setForm] = useState({ name: '', guard_name: 'web' });
+    const [failure, setFailure] = useState('');
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -21,7 +21,7 @@ export default function RolesPage({ createOnLoad = false }) {
             const { data } = await api.get('/roles-data');
             setRoles(data);
         } catch (error) {
-            setFeedback({ type: 'error', text: errorMessage(error, 'No fue posible consultar los roles.') });
+            setFailure(errorMessage(error, 'No fue posible consultar los roles.'));
         } finally {
             setLoading(false);
         }
@@ -30,31 +30,33 @@ export default function RolesPage({ createOnLoad = false }) {
     useEffect(() => { load(); }, [load]);
 
     const visibleRoles = useMemo(() => roles.filter((role) => role.name.toLowerCase().includes(query.toLowerCase())), [query, roles]);
-    const pagedRoles = visibleRoles.slice((page - 1) * pageSize, page * pageSize);
-
-    const submit = async (event) => {
-        event.preventDefault();
-        setSubmitting(true);
-        try {
-            const { data } = await csrfRequest({ method: 'post', url: '/roles-register', data: form });
-            setFeedback({ type: 'success', text: data.message });
-            setForm({ name: '', guard_name: 'web' });
-            setModalOpen(false);
-            await load();
-        } catch (error) {
-            setFeedback({ type: 'error', text: errorMessage(error) });
-        } finally {
-            setSubmitting(false);
-        }
-    };
 
     return (
         <div className="page-stack">
-            <section className="page-heading"><div><span className="eyebrow">Administración</span><h1>Roles por módulo</h1><p>Los gestores de escenarios administran simulaciones solares y los gestores de emociones administran los datos de webinars.</p></div><button className="primary-button" type="button" onClick={() => setModalOpen(true)}><Plus size={18} /> Nuevo rol</button></section>
-            {feedback && <div className={`alert alert--${feedback.type}`}>{feedback.type === 'success' ? <CheckCircle2 size={18} /> : <Info size={18} />}{feedback.text}</div>}
-            <div className="info-banner"><Info size={19} /><div><strong>Alcance por módulo</strong><p>Los roles gestores separan las operaciones solares y emocionales. El acceso concreto puede asignarse a cada escenario o webinar.</p></div></div>
-            <section className="content-card"><div className="toolbar"><label className="inline-search"><Search size={17} /><input placeholder="Buscar rol" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} /></label></div><div className="role-grid">{pagedRoles.map((role, index) => <article className="role-card" key={role.id}><header><span className={`metric-icon metric-icon--${['blue', 'purple', 'green', 'cyan'][index % 4]}`}><Shield size={21} /></span><span className="status-pill status-pill--blue">{role.guard_name}</span></header><h2>{role.name}</h2><p>Estructura administrativa registrada en Spatie Permission.</p><footer><span><Users size={16} /> {role.users_count} usuarios</span><span><KeyRound size={16} /> {role.permissions_count} permisos</span></footer></article>)}{loading && <div className="loading-card">Cargando roles…</div>}{!loading && visibleRoles.length === 0 && <div className="table-empty"><UserRoundCog size={24} /> No hay roles para mostrar.</div>}</div>{!loading && visibleRoles.length > 0 && <Pagination total={visibleRoles.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1); }} />}</section>
-            <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Crear rol" subtitle="Solo se registrará la identidad del rol; no se asignarán permisos."><form className="modal-form" onSubmit={submit}><label className="field-label" htmlFor="role-name">Nombre del rol</label><input className="text-input" id="role-name" required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Ej. operador" /><label className="field-label" htmlFor="guard-name">Guard</label><select className="text-input" id="guard-name" value={form.guard_name} onChange={(event) => setForm({ ...form, guard_name: event.target.value })}><option value="web">web</option><option value="api">api</option></select><div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setModalOpen(false)}>Cancelar</button><button className="primary-button" type="submit" disabled={submitting}><Plus size={18} />{submitting ? 'Creando…' : 'Crear rol'}</button></div></form></Modal>
+            <section className="page-heading"><div><span className="eyebrow">Administración</span><h1>Roles y permisos</h1><p>Los roles definen el alcance global; los módulos se habilitan individualmente desde Usuarios.</p></div></section>
+            {failure && <div className="alert alert--error" role="alert"><Info size={18} />{failure}</div>}
+            <div className="info-banner"><Info size={19} /><div><strong>Modelo de acceso simplificado</strong><p>Administrador tiene control completo. Usuario recibe acceso a Escenarios, Emociones o ambos desde su formulario de registro o actualización.</p></div></div>
+            <section className="content-card">
+                <div className="toolbar"><label className="inline-search"><Search size={17} /><input placeholder="Buscar rol" value={query} onChange={(event) => setQuery(event.target.value)} /></label></div>
+                <div className="role-grid">
+                    {visibleRoles.map((role, index) => {
+                        const isAdmin = role.name === 'admin';
+                        const highlightedPermissions = isAdmin
+                            ? role.permissions?.filter((permission) => permissionLabels[permission.name])
+                            : [];
+                        return <article className="role-card role-card--access" key={role.id}>
+                            <header><span className={`metric-icon metric-icon--${index ? 'purple' : 'blue'}`}><Shield size={21} /></span><span className="status-pill status-pill--blue">Rol del sistema</span></header>
+                            <h2>{isAdmin ? 'Administrador' : 'Usuario'}</h2>
+                            <p>{isAdmin ? 'Control total de cuentas, accesos y supervisión de los módulos.' : 'Accede únicamente a los módulos habilitados por un administrador.'}</p>
+                            {isAdmin && <div className="role-permissions">{highlightedPermissions.map((permission) => <span key={permission.id}><KeyRound size={13} />{permissionLabels[permission.name]}</span>)}</div>}
+                            {!isAdmin && <div className="role-permissions"><span><KeyRound size={13} />Permisos asignados por usuario</span></div>}
+                            <footer><span><Users size={16} /> {role.users_count} usuarios</span><span><KeyRound size={16} /> {isAdmin ? role.permissions_count : 'Variable'} permisos</span></footer>
+                        </article>;
+                    })}
+                    {loading && <div className="loading-card">Cargando roles…</div>}
+                    {!loading && visibleRoles.length === 0 && <div className="table-empty"><Shield size={24} /> No hay roles para mostrar.</div>}
+                </div>
+            </section>
         </div>
     );
 }

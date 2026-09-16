@@ -34,7 +34,12 @@ class DatabaseSeeder extends Seeder
             'password' => Hash::make('password'),
         ]);
 
-        $owner->syncRoles('cliente');
+        $owner->syncRoles('usuario');
+        $owner->syncPermissions([
+            'escenarios.leer', 'escenarios.crear', 'escenarios.actualizar', 'escenarios.eliminar',
+            'escenarios.invitar', 'escenarios.versionar', 'archivos.leer', 'archivos.actualizar',
+            'emociones.leer',
+        ]);
 
         $supervisor = User::updateOrCreate([
             'email' => 'supervisor@example.com',
@@ -43,7 +48,8 @@ class DatabaseSeeder extends Seeder
             'password' => Hash::make('password'),
         ]);
 
-        $supervisor->syncRoles('cliente');
+        $supervisor->syncRoles('usuario');
+        $supervisor->syncPermissions(['escenarios.leer', 'archivos.leer']);
 
         $collaborator = User::updateOrCreate([
             'email' => 'collaborator@example.com',
@@ -52,6 +58,7 @@ class DatabaseSeeder extends Seeder
             'password' => Hash::make('password'),
         ]);
 
-        $collaborator->syncRoles('cliente');
+        $collaborator->syncRoles('usuario');
+        $collaborator->syncPermissions(['escenarios.leer', 'archivos.leer']);
     }
 }

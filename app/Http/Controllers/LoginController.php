@@ -27,13 +27,25 @@ class LoginController extends Controller
             ], 401);
         }
 
+        if (! Auth::user()->is_active) {
+            Auth::logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            return response()->json([
+                'success' => false,
+                'code' => 'ACCOUNT_DISABLED',
+                'message' => 'Tu cuenta está inhabilitada. Contacta al administrador.',
+            ], 403);
+        }
+
         $request->session()->regenerate();
 
         return response()->json([
             'success' => true,
             'message' => 'Inicio de sesión exitoso.',
             'user' => [
-                ...Auth::user()->only(['id', 'name', 'email']),
+                ...Auth::user()->only(['id', 'name', 'email', 'is_active']),
                 'roles' => Auth::user()->getRoleNames()->values(),
                 'permissions' => Auth::user()->getAllPermissions()->pluck('name')->values(),
             ],
@@ -46,7 +58,7 @@ class LoginController extends Controller
         $user = Auth::user();
 
         return response()->json([
-            ...$user->only(['id', 'name', 'email']),
+            ...$user->only(['id', 'name', 'email', 'is_active']),
             'roles' => $user->getRoleNames()->values(),
             'permissions' => $user->getAllPermissions()->pluck('name')->values(),
         ]);

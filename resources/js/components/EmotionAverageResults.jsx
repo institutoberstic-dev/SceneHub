@@ -12,7 +12,7 @@ export default function EmotionAverageResults({ meeting }) {
     useEffect(() => {
         const controller = new AbortController();
         setLoading(true); setFailure('');
-        api.get(`/api/emociones/${meeting}?page=${page}`, { signal: controller.signal })
+        api.get(`/emociones-data/${meeting}?page=${page}`, { signal: controller.signal })
             .then(({ data: result }) => setData(result))
             .catch(error => { if (!controller.signal.aborted) setFailure(errorMessage(error)); })
             .finally(() => { if (!controller.signal.aborted) setLoading(false); });

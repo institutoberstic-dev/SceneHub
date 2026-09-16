@@ -37,6 +37,14 @@ class EscenariosController extends Controller
             ->withCount(['contenidos', 'users'])
             ->latest();
 
+        if ($request->user() && ! $request->user()->hasRole('admin')) {
+            $userId = $request->user()->id;
+            $query->where(function ($accessible) use ($userId): void {
+                $accessible->where('owner_id', $userId)
+                    ->orWhereHas('users', fn ($members) => $members->where('users.id', $userId));
+            });
+        }
+
         return response()->json(
             $query->get()
         );
@@ -56,7 +64,7 @@ class EscenariosController extends Controller
 
     public function store(Request $request)
     {
-        abort_unless($request->user()->hasAnyRole(['cliente', 'gestor_escenarios']) && ! $request->user()->hasRole('admin'), 403, 'El usuario no tiene un rol de gestión de escenarios.');
+        abort_if($request->user()->hasRole('admin'), 403, 'El administrador supervisa los escenarios, pero no crea contenido operativo.');
 
         $validated = $request->validate([
             'nombre' => ['required', 'string', 'max:255', 'unique:esceanarios,nombre'],

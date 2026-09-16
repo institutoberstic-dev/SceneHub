@@ -20,7 +20,7 @@ export default function ScenarioDetailPage() {
     const load = useCallback(async () => {
         setLoading(true);
         try {
-            const { data } = await api.get(`/api/escenarios/${id}`);
+            const { data } = await api.get(`/escenarios-data/${id}`);
             setScenario(data);
         } catch (error) {
             setFeedback({ type: 'error', text: errorMessage(error, 'No fue posible abrir el escenario.') });
