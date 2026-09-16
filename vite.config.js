@@ -28,7 +28,9 @@ export default defineConfig({
                     if (/\.(woff2|woff|ttf|eot|svg)$/.test(chunkInfo.name || '')) {
                         return 'assets/webfonts/[name][extname]';
                     }
-                    return 'assets/[name][extname]';
+                    // Content hashes prevent browsers and hosting CDNs from
+                    // reusing an older stylesheet after a deployment.
+                    return 'assets/[name]-[hash][extname]';
                 }
             }
         }

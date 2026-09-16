@@ -57,6 +57,8 @@ php artisan serve --host=127.0.0.1 --port=8000
 
 En producción no debe existir `public/hot`. Laravel cargará los archivos versionados de `public/build`.
 
+Al desplegar, sube completa la carpeta `public/build` generada por el mismo `npm run build`, incluido el `manifest.json`. No mezcles el manifiesto de una compilación con los archivos de otra: los nombres incluyen un hash de contenido para evitar que Hostinger o el navegador reutilicen CSS y JavaScript anteriores.
+
 ## Pruebas
 
 ```powershell
