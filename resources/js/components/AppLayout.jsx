@@ -31,7 +31,7 @@ const adminNavigation = [
 const pageMeta = {
     '/dashboard': ['Inicio', 'Hub de escenarios'],
     '/escenarios': ['Escenarios', 'Carga y administración'],
-    '/resultados': ['Resultados', 'Telemetría recibida'],
+    '/resultados': ['Resultados', 'Exposición por documento'],
     '/emociones': ['Emociones', 'Catálogo emocional'],
     '/users-list': ['Administración', 'Usuarios'],
     '/users-create': ['Administración', 'Usuarios'],

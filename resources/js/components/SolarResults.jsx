@@ -10,8 +10,8 @@ const number = value => numeric(value) === null ? '—' : Number(value).toLocale
 export default function SolarResults() {
     const [scenarios, setScenarios] = useState([]);
     const [scenario, setScenario] = useState('');
-    const [files, setFiles] = useState([]);
-    const [file, setFile] = useState('');
+    const [versions, setVersions] = useState([]);
+    const [version, setVersion] = useState('');
     const [interval, setInterval] = useState(1);
     const [filters, setFilters] = useState({ 1: defaults(), 5: defaults(), 10: defaults(), 60: defaults() });
     const [loading, setLoading] = useState(false);
@@ -30,22 +30,22 @@ export default function SolarResults() {
 
     useEffect(() => {
         const controller = new AbortController();
-        setFiles([]); setFile(''); setError('');
+        setVersions([]); setVersion(''); setError('');
         setFilters({ 1: defaults(), 5: defaults(), 10: defaults(), 60: defaults() });
         if (!scenario) { setLoading(false); return () => controller.abort(); }
         setLoading(true);
-        api.get(`/escenarios-data/${scenario}/resultados-solares`, { signal: controller.signal }).then(({ data }) => {
+        api.get(`/escenarios-data/${scenario}/resultados`, { signal: controller.signal }).then(({ data }) => {
             if (!Array.isArray(data.archivos)) throw new Error('Formato de respuesta inesperado.');
-            setFiles(data.archivos);
-            setFile(String(data.archivos[0]?.id ?? ''));
+            setVersions(data.archivos);
+            setVersion(String(data.archivos[0]?.data_version_id ?? ''));
         }).catch(e => {
             if (controller.signal.aborted) return;
-            setError(errorMessage(e, 'No fue posible consultar los resultados solares. Comprueba el acceso al escenario e inténtalo de nuevo.'));
+            setError(errorMessage(e, 'No fue posible consultar los resultados del documento. Comprueba el acceso al escenario e inténtalo de nuevo.'));
         }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
         return () => controller.abort();
     }, [scenario, reload]);
 
-    const selected = files.find(item => String(item.id) === file);
+    const selected = versions.find(item => String(item.data_version_id) === version);
     const rows = selected?.muestreos?.[interval] ?? [];
     const threshold = numeric(filter.threshold);
     const invalid = threshold === null || threshold < 0 || (filter.from !== '' && (numeric(filter.from) === null || Number(filter.from) < 0)) || (filter.to !== '' && (numeric(filter.to) === null || Number(filter.to) < 0)) || (filter.from !== '' && filter.to !== '' && Number(filter.from) > Number(filter.to));
@@ -61,10 +61,10 @@ export default function SolarResults() {
     const yMax = plotted.length ? Math.max(...plotted.map(row => row.value)) : 1;
 
     return <section className="content-card solar-results">
-        <div className="section-heading section-heading--inside"><div><h2>Simulación solar</h2><p>Explora cada hoja y los cambios observados en su intervalo.</p></div><button type="button" className="secondary-button" onClick={() => setReload(value => value + 1)}>Actualizar</button></div>
+        <div className="section-heading section-heading--inside"><div><h2>Resultados del documento</h2><p>{selected ? `${scenarios.find(item => String(item.id) === scenario)?.nombre || 'Escenario'} · Versión ${selected.version_datos} · ${selected.nombre}` : 'Elige un escenario y una versión de datos para iniciar la consulta.'}</p></div><button type="button" className="secondary-button" onClick={() => setReload(value => value + 1)}>Actualizar</button></div>
         <div className="solar-filters">
-            <label>Escenario<select className="text-input" value={scenario} onChange={e => setScenario(e.target.value)}><option value="">Selecciona un escenario</option>{scenarios.map(item => <option key={item.id} value={item.id}>{item.nombre}{item.version_datos ? ` (v${item.version_datos})` : ''}</option>)}</select></label>
-            <label>Archivo<select className="text-input" disabled={!files.length || loading} value={file} onChange={e => { setFile(e.target.value); setFilters({ 1: defaults(), 5: defaults(), 10: defaults(), 60: defaults() }); }}><option value="">Sin archivo seleccionado</option>{files.map(item => <option key={item.id} value={item.id}>{item.nombre}{item.version_datos ? ` (v${item.version_datos})` : ''}</option>)}</select></label>
+            <label>Escenario<select className="text-input" value={scenario} onChange={e => setScenario(e.target.value)}><option value="">Selecciona un escenario</option>{scenarios.map(item => <option key={item.id} value={item.id}>{item.nombre}</option>)}</select></label>
+            <label>Versión de datos<select className="text-input" disabled={!versions.length || loading} value={version} onChange={e => { setVersion(e.target.value); setFilters({ 1: defaults(), 5: defaults(), 10: defaults(), 60: defaults() }); }}>{!versions.length && <option value="">Sin versiones disponibles</option>}{versions.map(item => <option key={item.data_version_id} value={item.data_version_id}>Versión {item.version_datos}{item.es_actual ? ' · Más reciente' : ''} · {item.nombre}</option>)}</select></label>
         </div>
         <div className="detail-tabs solar-tabs" aria-label="Hojas de muestreo">{[1, 5, 10, 60].map(value => <button type="button" key={value} aria-pressed={interval === value} className={interval === value ? 'active' : ''} onClick={() => setInterval(value)}>{value === 1 ? 'Por minuto' : value === 60 ? 'Por hora' : `Cada ${value} minutos`}</button>)}</div>
         <div className="solar-body">
@@ -79,8 +79,9 @@ export default function SolarResults() {
             <p className="muted-cell">Tiempo transcurrido en HH:MM, incluso después de 24 horas. Umbral 0 muestra cualquier variación; ajústalo para excluir fluctuaciones pequeñas. Los acumulados muestran incrementos, no producción instantánea.</p>
             {invalid && <p role="alert">Revisa el rango de minutos y el umbral: deben ser números no negativos y el inicio no puede superar el final.</p>}
             {error && <p role="alert">{error}</p>}
+            {selected && <p className="info-banner">Estás viendo la versión {selected.version_datos}{selected.es_actual ? ', la publicación más reciente' : ', una publicación histórica'} del documento {selected.nombre}.</p>}
             {selected?.advertencias?.map(message => <p className="info-banner" key={message}>{message}</p>)}
-            <div aria-live="polite">{loading ? <p>Cargando resultados…</p> : error || invalid ? null : !scenario ? <p className="solar-empty">Selecciona un escenario para consultar sus resultados.</p> : !selected ? <p className="solar-empty">Este escenario no tiene archivos de resultados solares disponibles.</p> : !rows.length ? <p className="solar-empty">No hay registros para esta hoja.</p> : !visible.length ? <p className="solar-empty">No hay registros que coincidan con los filtros.</p> : <>
+            <div aria-live="polite">{loading ? <p>Cargando resultados…</p> : error || invalid ? null : !scenario ? <p className="solar-empty">Selecciona un escenario para consultar sus resultados.</p> : !selected ? <p className="solar-empty">Este escenario no tiene versiones con datos importados.</p> : !rows.length ? <p className="solar-empty">No hay registros para esta hoja.</p> : !visible.length ? <p className="solar-empty">No hay registros que coincidan con los filtros.</p> : <>
                 {filter.variable === 'potencia_solar_w' && minuteStart && <p className="info-banner">Primer inicio observado en la hoja Minutos: {formatTime(minuteStart.tiempo_minutos)} (umbral: {number(threshold)} W).</p>}
                 <div className="solar-chart"><strong>{title} ({unit})</strong><p>{number(yMin)} a {number(yMax)} {unit} · {formatTime(xMin)} a {formatTime(xMax)}</p><svg viewBox="0 0 900 200" role="img" aria-label={`${title}: ${plotted.length} muestras. Los puntos destacados indican cambios.`}><line x1="20" y1="180" x2="880" y2="180" stroke="#ccd5e1" />{plotted.map(row => <circle key={row.tiempo_minutos} cx={20 + (Number(row.tiempo_minutos) - xMin) / (xMax - xMin || 1) * 860} cy={180 - (row.value - yMin) / (yMax - yMin || 1) * 160} r={row.change ? 3.5 : 2} fill={row.change ? '#b45309' : '#175cd3'}><title>{formatTime(row.tiempo_minutos)}: {number(row.value)} {unit}{row.change ? ` · ${labels[row.change]}` : ''}</title></circle>)}</svg><small>Azul: muestra · Ámbar: cambio detectado. Valores ausentes no se representan.</small></div>
                 <p>{visible.length} registros · {visible.filter(row => row.change).length} cambios. El valor anterior corresponde al registro previo de esta hoja.</p>

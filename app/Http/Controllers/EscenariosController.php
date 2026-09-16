@@ -69,24 +69,27 @@ class EscenariosController extends Controller
         $validated = $request->validate([
             'nombre' => ['required', 'string', 'max:255', 'unique:esceanarios,nombre'],
             'descripcion' => ['required', 'string', 'max:2000'],
-            'archivo' => ['required', 'file', 'max:51200'],
+            'archivo' => ['required_without:archivos', ...$this->scenarioFileRules()],
+            'archivos' => ['required_without:archivo', 'array', 'min:1', 'max:10'],
+            'archivos.*' => $this->scenarioFileRules(),
         ]);
 
-        $import = $this->readImport($request->file('archivo'));
+        $files = $this->uploadedScenarioFiles($request);
+        $imports = array_map(fn ($file) => $this->readImport($file), $files);
 
-        return $this->createScenario($request, $validated, $import);
+        return $this->createScenario($validated, $files, $imports);
     }
 
-    private function createScenario(Request $request, array $validated, ?array $import)
+    private function createScenario(array $validated, array $files, array $imports)
     {
-        $escenario = $this->withScenarioFiles(function () use ($request, $validated, $import) {
+        $escenario = $this->withScenarioFiles(function () use ($validated, $files, $imports) {
             $user = Auth::user();
             $escenario = Escenario::create([
                 'nombre' => $validated['nombre'],
                 'owner_id' => $user->id,
                 'estado' => 'Activo',
                 'descripcion' => $validated['descripcion'],
-                'versiones' => $request->hasFile('archivo') ? 1 : 0,
+                'versiones' => $files ? 1 : 0,
             ]);
             $escenario->update([
                 'storage_directory' => $this->scenarioDirectory($escenario),
@@ -99,9 +102,9 @@ class EscenariosController extends Controller
 
             $this->rollbackPaths[] = $this->scenarioRoot($escenario);
             File::ensureDirectoryExists($this->scenarioRoot($escenario));
-            if ($request->hasFile('archivo')) {
-                $file = $request->file('archivo');
-                $stored = $this->storeScenarioFile($escenario, $file, 1.0);
+            foreach ($files as $index => $file) {
+                $stored = $this->storeScenarioFile($escenario, $file, $index === 0 ? 1.0 : null);
+                $import = $imports[$index] ?? null;
 
                 EscenarioContenido::create([
                     'escenario_id' => $escenario->id,
@@ -109,21 +112,28 @@ class EscenariosController extends Controller
                     'modified_by' => $user->id,
                     'nombre' => $file->getClientOriginalName(),
                     'ruta' => $stored['path'],
-                    'tipo' => 'archivo',
+                    'tipo' => $import ? 'datos' : 'documento',
                     'mime_type' => $file->getClientMimeType(),
                     'tamano' => $file->getSize() ?: 0,
                     'version' => $stored['version'],
                     'estado' => 'Disponible',
                 ]);
-            }
 
-            if (isset($stored)) $this->persistSolar($escenario->id, $stored['path'], $import);
+                if ($import) {
+                    $this->persistSolar($escenario->id, $stored['path'], $import);
+                }
+                if ($stored['version'] !== (float) $escenario->versiones) {
+                    $escenario->update(['versiones' => $stored['version']]);
+                }
+            }
 
             return $escenario;
         });
 
+        $imported = count(array_filter($imports));
+
         return response()->json([
-            'message' => 'Escenario creado exitosamente.',
+            'message' => $this->uploadSummary(count($files), $imported, 'Escenario creado exitosamente.'),
             'data' => $escenario->load(['owner:id,name,email', 'contenidos']),
         ], 201);
     }
@@ -194,60 +204,82 @@ class EscenariosController extends Controller
 
         $validated = $request->validate([
             'nombre' => ['nullable', 'string', 'max:255'],
-            'archivo' => ['required', 'file', 'max:51200'],
+            'archivo' => ['required_without:archivos', ...$this->scenarioFileRules()],
+            'archivos' => ['required_without:archivo', 'array', 'min:1', 'max:10'],
+            'archivos.*' => $this->scenarioFileRules(),
         ]);
 
-        $import = $this->readImport($request->file('archivo'));
-        $result = $this->withScenarioFiles(function () use ($request, $validated, $escenario, $user, $import) {
+        $files = $this->uploadedScenarioFiles($request);
+        $imports = array_map(fn ($file) => $this->readImport($file), $files);
+        $result = $this->withScenarioFiles(function () use ($validated, $escenario, $user, $files, $imports) {
             $lockedScenario = Escenario::query()->lockForUpdate()->findOrFail($escenario->id);
-            $file = $request->file('archivo');
-            $stored = $this->storeScenarioFile($lockedScenario, $file);
+            $contents = [];
+            $storedCount = 0;
+            $importedCount = 0;
+            $newVersion = false;
 
-            $content = $stored['stored']
-                ? EscenarioContenido::create([
-                    'escenario_id' => $escenario->id,
-                    'uploaded_by' => $user?->id,
-                    'modified_by' => $user?->id,
-                    'nombre' => ($validated['nombre'] ?? null) ?: $file->getClientOriginalName(),
-                    'ruta' => $stored['path'],
-                    'tipo' => 'resultado',
-                    'mime_type' => $file->getClientMimeType(),
-                    'tamano' => $file->getSize() ?: 0,
-                    'version' => $stored['version'],
-                    'estado' => 'Disponible',
-                ])
-                : EscenarioContenido::query()
-                    ->where('escenario_id', $escenario->id)
-                    ->where('ruta', $stored['path'])
-                    ->latest()
-                    ->first();
+            foreach ($files as $index => $file) {
+                $import = $imports[$index] ?? null;
+                $stored = $this->storeScenarioFile($lockedScenario, $file);
+                $content = $stored['stored']
+                    ? EscenarioContenido::create([
+                        'escenario_id' => $escenario->id,
+                        'uploaded_by' => $user?->id,
+                        'modified_by' => $user?->id,
+                        'nombre' => count($files) === 1 && ($validated['nombre'] ?? null)
+                            ? $validated['nombre']
+                            : $file->getClientOriginalName(),
+                        'ruta' => $stored['path'],
+                        'tipo' => $import ? 'datos' : 'documento',
+                        'mime_type' => $file->getClientMimeType(),
+                        'tamano' => $file->getSize() ?: 0,
+                        'version' => $stored['version'],
+                        'estado' => 'Disponible',
+                    ])
+                    : EscenarioContenido::query()
+                        ->where('escenario_id', $escenario->id)
+                        ->where('ruta', $stored['path'])
+                        ->latest()
+                        ->first();
 
-            $this->persistSolar($escenario->id, $stored['path'], $import);
+                if ($import && $stored['stored']) {
+                    $this->persistSolar($escenario->id, $stored['path'], $import);
+                    $importedCount++;
+                }
 
-            if ($stored['stored']) {
-                $lockedScenario->update([
-                    'versiones' => $stored['version'],
-                    'estado' => 'Activo',
-                ]);
+                if ($stored['stored']) {
+                    $storedCount++;
+                    $newVersion = $newVersion || $stored['new_version'];
+                    $lockedScenario->update([
+                        'versiones' => $stored['version'],
+                        'estado' => 'Activo',
+                    ]);
+                }
+                if ($content) {
+                    $contents[] = $content;
+                }
             }
 
             return [
-                'content' => $content,
-                'new_version' => $stored['new_version'],
-                'stored' => $stored['stored'],
+                'contents' => $contents,
+                'new_version' => $newVersion,
+                'stored_count' => $storedCount,
+                'imported_count' => $importedCount,
             ];
         });
 
+        $loadedContents = collect($result['contents'])
+            ->map->load(['uploadedBy:id,name', 'modifiedBy:id,name'])
+            ->values();
+
         return response()->json([
-            'message' => ! $result['stored']
-                ? 'El archivo no presenta cambios; no se almacenó una copia duplicada.'
-                : ($result['new_version']
-                    ? 'Archivo modificado y nueva versión registrada exitosamente.'
-                    : 'Archivo agregado a la versión actual exitosamente.'),
-            'stored' => $result['stored'],
+            'message' => $result['stored_count'] === 0
+                ? 'Los archivos no presentan cambios; no se almacenaron copias duplicadas.'
+                : $this->uploadSummary($result['stored_count'], $result['imported_count'], 'Archivos almacenados exitosamente.'),
+            'stored' => $result['stored_count'] > 0,
             'new_version' => $result['new_version'],
-            'data' => $result['content']?->load(['uploadedBy:id,name', 'modifiedBy:id,name']),
-        ], $result['stored'] ? 201 : 200);
+            'data' => count($files) === 1 ? $loadedContents->first() : $loadedContents,
+        ], $result['stored_count'] > 0 ? 201 : 200);
     }
 
     public function update(Request $request, Escenario $escenario)
@@ -277,7 +309,7 @@ class EscenariosController extends Controller
             'nombre' => ['required', 'string', 'max:255', 'unique:esceanarios,nombre,'.$escenario->id],
             'descripcion' => ['required', 'string', 'max:2000'],
             'estado' => ['required', 'in:Activo,Inactivo'],
-            'archivo' => ['nullable', 'file', 'max:51200'],
+            'archivo' => ['nullable', ...$this->scenarioFileRules()],
         ]);
 
         abort_if(
@@ -288,7 +320,6 @@ class EscenariosController extends Controller
         );
 
         $import = $this->readImport($request->file('archivo'));
-
 
         $newVersion = $this->withScenarioFiles(function () use ($request, $validated, $escenario, $user, $import) {
             $lockedScenario = Escenario::query()->lockForUpdate()->findOrFail($escenario->id);
@@ -309,7 +340,7 @@ class EscenariosController extends Controller
                         'modified_by' => $user->id,
                         'nombre' => $file->getClientOriginalName(),
                         'ruta' => $stored['path'],
-                        'tipo' => 'actualizacion',
+                        'tipo' => $import ? 'datos' : 'documento',
                         'mime_type' => $file->getClientMimeType(),
                         'tamano' => $file->getSize() ?: 0,
                         'version' => $stored['version'],
@@ -320,7 +351,9 @@ class EscenariosController extends Controller
                 }
             }
 
-            if (isset($stored)) $this->persistSolar($escenario->id, $stored['path'], $import);
+            if (isset($stored) && $stored['stored'] && $import) {
+                $this->persistSolar($escenario->id, $stored['path'], $import);
+            }
             $lockedScenario->update($scenarioData);
 
             return $stored ?? null;
@@ -390,8 +423,41 @@ class EscenariosController extends Controller
         return app(ScenarioSolarImport::class)->read($file);
     }
 
+    private function scenarioFileRules(): array
+    {
+        return ['file', 'max:51200', 'mimes:xlsx,xls,doc,docx', 'extensions:xlsx,xls,doc,docx'];
+    }
+
+    /** @return array<int, \Illuminate\Http\UploadedFile> */
+    private function uploadedScenarioFiles(Request $request): array
+    {
+        $files = $request->file('archivos', []);
+        if ($request->hasFile('archivo')) {
+            $files[] = $request->file('archivo');
+        }
+
+        return array_values(array_filter($files));
+    }
+
+    private function uploadSummary(int $stored, int $imported, string $prefix): string
+    {
+        $documents = $stored - $imported;
+        $parts = [];
+        if ($imported > 0) {
+            $parts[] = $imported.' '.($imported === 1 ? 'documento fue importado a resultados' : 'documentos fueron importados a resultados');
+        }
+        if ($documents > 0) {
+            $parts[] = $documents.' '.($documents === 1 ? 'archivo quedó disponible para descarga' : 'archivos quedaron disponibles para descarga');
+        }
+
+        return $parts ? $prefix.' '.ucfirst(implode(' y ', $parts)).'.' : $prefix;
+    }
+
     private function persistSolar(int $scenarioId, string $path, ?array $import): void
     {
+        if (! $import) {
+            return;
+        }
         $content = EscenarioContenido::where('escenario_id', $scenarioId)->where('ruta', $path)->latest('id')->firstOrFail();
         app(ScenarioSolarImport::class)->persist($scenarioId, $content->id, $import);
         app(\App\Services\DataVersions::class)->register($scenarioId, $content->id, 'solar', $import['rows']);
@@ -407,22 +473,50 @@ class EscenariosController extends Controller
             'agua_desalinizada' => 'agua_desalinizada_acum_m3', 'salmuera' => 'salmuera_acum_m3',
             'lodos_gruesos' => 'lodos_gruesos_acum_paquetes', 'lodos_finos' => 'lodos_finos_acum_paquetes',
         ];
-        $groups = DB::table('solar_data')->where('escenario_id', $escenario->id)
-            ->orderBy('tiempo_minutos')->get()->groupBy('archivo_id');
-        $files = $escenario->contenidos()->whereIn('id', $groups->keys())->get();
-        return response()->json(['archivos' => $files->map(function ($file) use ($groups, $mapping) {
+        $versions = DB::table('data_versions')
+            ->where('escenario_id', $escenario->id)
+            ->where('tipo', 'solar')
+            ->orderByDesc('revision')
+            ->get();
+        $files = $escenario->contenidos()->whereIn('id', $versions->pluck('archivo_id'))->get()->keyBy('id');
+        $groups = DB::table('solar_data')
+            ->whereIn('archivo_id', $versions->pluck('archivo_id'))
+            ->orderBy('tiempo_minutos')
+            ->get()
+            ->groupBy('archivo_id');
+
+        $items = $versions->map(function ($version, $index) use ($files, $groups, $mapping) {
+            $file = $files->get($version->archivo_id);
             $samples = ['1' => [], '5' => [], '10' => [], '60' => []];
-            foreach ($groups[$file->id] as $row) {
+            foreach ($groups->get($version->archivo_id, collect()) as $row) {
                 $point = ['tiempo_minutos' => (int) $row->tiempo_minutos,
                     'energia_almacenada_wh' => null,
                     'energia_almacenada_original' => $row->energia_almacenada];
-                foreach ($mapping as $source => $target) $point[$target] = $row->$source === null ? null : (float) $row->$source;
+                foreach ($mapping as $source => $target) {
+                    $point[$target] = $row->$source === null ? null : (float) $row->$source;
+                }
                 $samples[(string) $row->intervalo_minutos][] = $point;
             }
-            $version = DB::table('data_versions')->where('archivo_id', $file->id)->where('tipo', 'solar')->orderByDesc('revision')->value('version');
-            return ['id' => $file->id, 'nombre' => $file->nombre, 'version_datos' => $version, 'muestreos' => $samples,
-                'advertencias' => ['La unidad de energía almacenada está pendiente de confirmar; se conserva el valor original rotulado W.']];
-        })->values()]);
+
+            return [
+                'id' => $version->archivo_id,
+                'data_version_id' => $version->id,
+                'nombre' => $file?->nombre ?? 'Documento no disponible',
+                'version_datos' => $version->version,
+                'revision' => (int) $version->revision,
+                'es_actual' => $index === 0,
+                'publicada_en' => $version->created_at,
+                'muestreos' => $samples,
+                'advertencias' => ['La unidad de energía almacenada está pendiente de confirmar; se conserva el valor original rotulado W.'],
+            ];
+        })->values();
+
+        return response()->json([
+            'version_actual' => $items->first()['version_datos'] ?? null,
+            'versiones' => $items->map(fn ($item) => collect($item)->except(['muestreos', 'advertencias'])->all()),
+            // Conserva la clave histórica para clientes que ya consumen este endpoint.
+            'archivos' => $items,
+        ]);
     }
 
     private function authorizeReading(Request $request, Escenario $escenario): void

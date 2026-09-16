@@ -2,20 +2,19 @@
 
 Las rutas globales antiguas `/api/features`, `/api/simu-solars`, `/api/send-features` y `/api/send-simu-sol` fueron eliminadas. Los clientes deben usar las API solares por escenario y la API emocional directa por webinar.
 
-Las ocho rutas públicas actuales están en `routes/api.php`:
+Las rutas públicas actuales están en `routes/api.php`:
 
 | Método y ruta | Función |
 | --- | --- |
-| GET `/api/emociones` | Listado de webinars y asociación por ID. |
-| POST `/api/emociones/datos` | Carga emocional multipart, campo `archivo`, máximo 50 MB. |
-| GET `/api/emociones/{meeting}` | Promedio en `summary` y detalle en `details`, 50 filas por página (`?page=2`). |
+| GET `/api/emociones` | Webinars con datos emocionales, nombre correlacionado, promedio y registros completos. |
+| GET `/api/emociones/{meeting}` | Nombre y metadatos del webinar, promedio emocional y todos sus registros completos. |
 | GET `/api/escenarios` | Listado de simulaciones. |
 | GET `/api/escenarios/{escenario}` | Información y archivos del escenario. |
 | GET `/api/escenarios/{escenario}/resultados-solares` | Datos solares adaptados a las vistas del panel. |
 | GET `/api/escenarios/{escenario}/solar` | Descarga de resultados solares, admite `version`. |
 | GET `/api/escenarios/{escenario}/versiones-datos?tipo=solar` | Consulta de cambios y versiones solares. |
 
-La carga solar requiere sesión y permisos en rutas web. La carga emocional es pública según la configuración solicitada. Usuarios y roles se consultan internamente mediante `/users-data` y `/roles-data`, con sesión y rol administrador; `/session-user` requiere sesión.
+Las APIs externas son de solo lectura. Las cargas solares y emocionales requieren sesión y permisos dentro del proyecto. El módulo Emociones guarda los archivos mediante la ruta privada `POST /emociones-data`; esta operación no se expone bajo `/api`. Usuarios y roles se consultan internamente mediante `/users-data` y `/roles-data`, con sesión y rol administrador; `/session-user` requiere sesión.
 
 ## Consultar si hay novedades
 
@@ -59,13 +58,51 @@ Las versiones son cadenas (`"1.0"`, `"1.1"`), no floats. La revisión interna es
 
 `GET /api/emociones/ID_MEETING`
 
-Devuelve los datos cargados para el webinar seleccionado. No recibe escenario ni versión. Los tres campos del promedio son:
+Devuelve JSON con los datos cargados para el webinar seleccionado. No recibe escenario ni versión. El servidor usa `id_meeting` internamente para cruzar las tablas locales con Versteeg Live, pero no expone ese identificador. Tampoco expone los campos técnicos `id` ni `id_persona`. De Versteeg Live incorpora únicamente el título y el tema; si el servicio no está disponible, usa un nombre provisional y conserva todos los datos emocionales locales.
+
+Respuesta orientativa:
 
 ```json
-[{"id_meeting":10,"nivel_atencion_prom":"ATENTO","emocion_ganadora_prom":"disgust"}]
+{
+  "webinar": {
+    "titulo": "Webinar de hidrógeno",
+    "tema": "Energía sostenible"
+  },
+  "data_promedio": [
+    {
+      "nivel_atencion_prom": "ATENTO",
+      "emocion_ganadora_prom": "disgust",
+      "source_file": "promedio.xlsx"
+    }
+  ],
+  "data_completa": [
+    {
+      "archivo": "frame.jpg",
+      "nivel_atencion": "ATENTO",
+      "score_atencion": 0.82,
+      "emocion_ganadora": "happy",
+      "fecha": "2026-09-16",
+      "tiempo": "10:03:05",
+      "validez": true,
+      "estatus_calidad_DAMA": "VERIFICADO",
+      "source_file": "completo.xlsx"
+    }
+  ],
+  "totales": {
+    "promedios": 1,
+    "registros": 1,
+    "validos": 1,
+    "invalidos": 0,
+    "personas": 1
+  },
+  "archivos_origen": {
+    "promedio": ["promedio.xlsx"],
+    "datos_completos": ["completo.xlsx"]
+  }
+}
 ```
 
-No calcula ni inventa valores. El promedio admite una hoja con los tres encabezados y un registro por reunión. El archivo completo requiere las 17 columnas de detalle del formato entregado. El promedio numérico antiguo de 11 columnas ya no se admite. Cada carga reemplaza solo su formato para los meetings incluidos, conservando el otro formato. No hay versiones emocionales.
+`GET /api/emociones` devuelve la misma estructura dentro del arreglo `webinars`, una entrada por cada reunión que tenga datos locales. Las claves de correlación permanecen en el servidor y no aparecen en el JSON. La API no calcula ni inventa valores. El promedio admite una hoja con los tres encabezados y un registro por reunión. El archivo completo requiere las 17 columnas de detalle del formato entregado. El promedio numérico antiguo de 11 columnas ya no se admite. Cada carga reemplaza solo su formato para los meetings incluidos, conservando el otro formato. No hay versiones emocionales.
 
 ## Descargar Solar
 
@@ -77,7 +114,7 @@ La descarga devuelve la serie completa para el JSON local; la paginación es vis
 
 ## Prueba manual
 
-1. Enviar `data_final_promedio (2).xlsx` a `POST /api/emociones/datos`. Abrir Emociones y Webinar 10: debe mostrar ATENTO y disgust, sin porcentajes. La carga emocional se relaciona únicamente mediante `id_meeting`; no crea versiones de escenarios.
+1. Iniciar sesión con permiso `emociones.cargar` y enviar `data_final_promedio (2).xlsx` desde el formulario privado del módulo Emociones (`POST /emociones-data`). Abrir Webinar 10: debe mostrar ATENTO y disgust, sin porcentajes. La carga emocional se relaciona únicamente mediante `id_meeting`; no crea versiones de escenarios.
 2. Consultar el manifiesto sin versión local: debe devolver `descarga_inicial` y `1.0`.
 3. Consultarlo con `version_actual=1.0`: debe devolver `sin_cambios` y `hay_datos=true`.
 4. Cambiar un valor en una copia del Excel y cargarla en el mismo escenario: debe publicar `1.1` y avisar al cliente con `1.0`.
