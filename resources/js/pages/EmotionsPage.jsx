@@ -1,5 +1,5 @@
-import { CalendarDays, Clock3, MessageCircle, MoveRight } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { CalendarDays, Clock3, FileSpreadsheet, Info, LoaderCircle, MessageCircle, MoveRight, UploadCloud, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, errorMessage } from '../http';
 import Pagination from '../components/Pagination.jsx';
@@ -25,6 +25,7 @@ export default function EmotionsPage() {
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(15);
     const [reload, setReload] = useState(0);
+    const fileInput = useRef(null);
 
     useEffect(() => {
         api.get('/api/emociones')
@@ -65,18 +66,28 @@ export default function EmotionsPage() {
                 </div>
             </section>
 
-            {failure && <div className="alert alert--error">{failure}</div>}
-            {message && <div className="alert alert--success">{message}</div>}
+            {failure && <div className="alert alert--error" role="alert">{failure}</div>}
+            {message && <div className="alert alert--success" role="status">{message}</div>}
 
-            <section className="content-card emotion-upload-card">
-                <div className="page-heading page-heading--compact">
-                    <div><span className="eyebrow">Carga de datos</span><h2>Resultados emocionales</h2><p>Carga el archivo completo o el promedio. Sus identificadores enlazan automáticamente los datos con cada webinar.</p></div>
+            <section className="content-card emotion-upload-card" aria-labelledby="emotion-upload-title">
+                <div className="emotion-upload-card__intro">
+                    <span className="eyebrow">Carga de datos</span>
+                    <h2 id="emotion-upload-title">Resultados emocionales</h2>
+                    <p>Sube el archivo completo o el promedio para actualizar el contenido de tus webinars.</p>
+                    <p className="emotion-upload-card__hint" id="emotion-upload-help"><Info size={16} aria-hidden="true" /><span>Incluye la columna <code>id_meeting</code> para asociar los datos a cada webinar automáticamente.</span></p>
                 </div>
-                <form className="solar-filters solar-filters--upload" onSubmit={upload}>
-                    <label>Archivo de resultados<input className="text-input" type="file" accept=".xlsx,.xls" required onChange={event => setFile(event.target.files[0] || null)} /></label>
-                    <button className="primary-button" type="submit" disabled={uploading || !file}>{uploading ? 'Cargando…' : 'Cargar resultados'}</button>
+                <form className="emotion-upload-form" onSubmit={upload} aria-busy={uploading}>
+                    <label className={`file-picker${file ? ' file-picker--selected' : ''}${uploading ? ' file-picker--disabled' : ''}`}>
+                        <span className="file-picker__icon">{file ? <FileSpreadsheet size={24} /> : <UploadCloud size={24} />}</span>
+                        <span className="file-picker__copy"><strong>{file ? file.name : 'Selecciona tu archivo'}</strong><span>{file ? `${new Intl.NumberFormat('es-CO', { maximumFractionDigits: 1 }).format(file.size / 1024)} KB · Haz clic para cambiarlo` : 'Excel (.xlsx o .xls) · Completo o promedio'}</span></span>
+                        <input ref={fileInput} type="file" accept=".xlsx,.xls" required disabled={uploading} aria-label="Archivo de resultados emocionales" aria-describedby="emotion-upload-help" onChange={event => { setFile(event.target.files[0] || null); setMessage(''); }} />
+                    </label>
+                    <div className="emotion-upload-form__actions">
+                        <span className="emotion-upload-form__status" role="status">{uploading ? 'Procesando tu archivo…' : file ? 'Archivo listo para cargar' : 'Selecciona un archivo para continuar'}</span>
+                        {file && <button className="icon-button" type="button" disabled={uploading} aria-label="Quitar archivo seleccionado" onClick={() => { setFile(null); fileInput.current.value = ''; }}><X size={18} /></button>}
+                        <button className="primary-button" type="submit" disabled={uploading || !file}>{uploading ? <LoaderCircle className="upload-spinner" size={17} /> : <UploadCloud size={17} />}{uploading ? 'Cargando…' : 'Cargar resultados'}</button>
+                    </div>
                 </form>
-                <p className="field-help">El archivo debe incluir el identificador del webinar en la columna <code>id_meeting</code>. La API asociará cada registro automáticamente.</p>
             </section>
 
             <section className="emotion-grid" aria-label="Sesiones del módulo Emociones">
