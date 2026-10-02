@@ -13,8 +13,9 @@ Las rutas públicas actuales están en `routes/api.php`:
 | GET `/api/escenarios/{escenario}/resultados-solares` | Datos solares adaptados a las vistas del panel. |
 | GET `/api/escenarios/{escenario}/solar` | Descarga de resultados solares, admite `version`. |
 | GET `/api/escenarios/{escenario}/versiones-datos?tipo=solar` | Consulta de cambios y versiones solares. |
+| POST `/api/unity/imagenes` | Carga libre de imágenes desde Unity (ver «Cargar imágenes desde Unity»). |
 
-Las APIs externas son de solo lectura. Las cargas solares y emocionales requieren sesión y permisos dentro del proyecto. El módulo Emociones guarda los archivos mediante la ruta privada `POST /emociones-data`; esta operación no se expone bajo `/api`. Usuarios y roles se consultan internamente mediante `/users-data` y `/roles-data`, con sesión y rol administrador; `/session-user` requiere sesión.
+Las APIs externas son de solo lectura, salvo `POST /api/unity/imagenes`, que solo guarda imágenes en el almacenamiento y no modifica datos solares, emocionales ni escenarios. Las cargas solares y emocionales requieren sesión y permisos dentro del proyecto. El módulo Emociones guarda los archivos mediante la ruta privada `POST /emociones-data`; esta operación no se expone bajo `/api`. Usuarios y roles se consultan internamente mediante `/users-data` y `/roles-data`, con sesión y rol administrador; `/session-user` requiere sesión.
 
 ## Consultar si hay novedades
 
@@ -120,6 +121,65 @@ La descarga devuelve la serie completa para el JSON local; la paginación es vis
 4. Cambiar un valor en una copia del Excel y cargarla en el mismo escenario: debe publicar `1.1` y avisar al cliente con `1.0`.
 5. Descargar `?version=1.0` y `?version=1.1`: cada una conserva sus valores. Cambiar únicamente el nombre o el orden de las filas no publica otra versión si el contenido coincide con el último.
 6. Repetir el manifiesto con `tipo=solar`. `Resultados caso 1.xlsx` alimenta las cuatro hojas (`Minutos`, `Cada5min`, `Cada10min` y `Horas`); cambiar de página o tamaño no recarga toda la pantalla.
+
+## Cargar imágenes desde Unity
+
+`POST /api/unity/imagenes` (multipart/form-data). API libre: no requiere sesión, permisos ni token CSRF. Limitada a 30 solicitudes por minuto por IP.
+
+| Campo | Obligatorio | Descripción |
+| --- | --- | --- |
+| `imagen` | Sí, o `imagenes[]` | Un archivo de imagen. |
+| `imagenes[]` | Sí, o `imagen` | Varios archivos (máximo 10 por solicitud). |
+| `escenario_id` | No | Id de un escenario existente. Si se omite, se guarda en `general`. |
+
+Formatos: `png`, `jpg`, `jpeg`, `webp`; máximo 10 MB por imagen. El servidor comprueba el contenido real del archivo (no basta con la extensión) y genera un nombre seguro y único.
+
+Ubicación: `storage/app/public/unity/{escenario_id|general}/{AAAA-MM-DD}/{nombre}_{HHMMSS}_{aleatorio}.{ext}`. Para que la `url` de la respuesta sea accesible, ejecutar una vez `php artisan storage:link` (crea `public/storage`).
+
+Respuesta `201`:
+
+```json
+{
+  "ok": true,
+  "mensaje": "Imagen guardada.",
+  "escenario_id": 3,
+  "total": 1,
+  "imagenes": [
+    {
+      "nombre": "captura_142530_k3x9qa.png",
+      "nombre_original": "captura.png",
+      "ruta": "unity/3/2026-10-02/captura_142530_k3x9qa.png",
+      "url": "http://localhost/storage/unity/3/2026-10-02/captura_142530_k3x9qa.png",
+      "mime_type": "image/png",
+      "tamano": 48213
+    }
+  ]
+}
+```
+
+Errores: `422` con `ok=false`, `mensaje` y `errores` (siempre JSON, aunque Unity no envíe `Accept`); `429` si se supera el límite de solicitudes; `500` si falla la escritura (no deja archivos a medias).
+
+Ejemplo en Unity (C#):
+
+```csharp
+IEnumerator SubirCaptura(Texture2D textura, int escenarioId)
+{
+    var form = new WWWForm();
+    form.AddField("escenario_id", escenarioId);
+    form.AddBinaryData("imagen", textura.EncodeToPNG(), "captura.png", "image/png");
+
+    using var req = UnityWebRequest.Post(baseUrl + "/api/unity/imagenes", form);
+    req.SetRequestHeader("Accept", "application/json");
+    yield return req.SendWebRequest();
+
+    if (req.result == UnityWebRequest.Result.Success)
+        Debug.Log("Imagen guardada: " + req.downloadHandler.text);
+    else
+        Debug.LogError(req.responseCode + " " + req.downloadHandler.text);
+}
+```
+
+Para varias imágenes en una sola solicitud, repetir `form.AddBinaryData("imagenes[]", bytes, nombre, mime)` por cada una. En XAMPP revisar que `upload_max_filesize` y `post_max_size` de `php.ini` admitan el tamaño total enviado.
 
 ## Consultar el escenario completo
 
