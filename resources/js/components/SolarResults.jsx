@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, errorMessage } from '../http';
-import { detectChanges, formatTime, numeric, variables } from './solarSampling';
+import { availableVariables, detectChanges, formatTime, numeric } from './solarSampling';
 import Pagination from './Pagination.jsx';
 
 const labels = { inicio: 'Inicio de generación', fin: 'Fin de generación', deficit: 'Entrada en déficit', excedente: 'Entrada en excedente', variacion: 'Variación' };
@@ -47,11 +47,15 @@ export default function SolarResults() {
 
     const selected = versions.find(item => String(item.data_version_id) === version);
     const rows = selected?.muestreos?.[interval] ?? [];
+    // Los libros básicos no traen el balance de batería y diésel: solo se ofrecen variables con datos.
+    const options = availableVariables(selected);
+    const variable = options.some(([key]) => key === filter.variable) ? filter.variable : options[0][0];
+    const extended = options.some(([key]) => key === 'estado_carga_pct');
     const threshold = numeric(filter.threshold);
     const invalid = threshold === null || threshold < 0 || (filter.from !== '' && (numeric(filter.from) === null || Number(filter.from) < 0)) || (filter.to !== '' && (numeric(filter.to) === null || Number(filter.to) < 0)) || (filter.from !== '' && filter.to !== '' && Number(filter.from) > Number(filter.to));
-    const analyzed = useMemo(() => detectChanges(rows, filter.variable, threshold ?? 0, interval), [rows, filter.variable, threshold, interval]);
+    const analyzed = useMemo(() => detectChanges(rows, variable, threshold ?? 0, interval), [rows, variable, threshold, interval]);
     const visible = analyzed.filter(row => !invalid && (filter.from === '' || row.tiempo_minutos >= Number(filter.from)) && (filter.to === '' || row.tiempo_minutos <= Number(filter.to)) && (!filter.changesOnly || row.change) && (!filter.event || row.change === filter.event));
-    const [, title, unit] = variables.find(v => v[0] === filter.variable);
+    const [, title, unit] = options.find(v => v[0] === variable);
     const minuteStart = detectChanges(selected?.muestreos?.[1] ?? [], 'potencia_solar_w', threshold ?? 0, 1).find(row => row.change === 'inicio');
     const pageCount = Math.max(1, Math.ceil(visible.length / filter.pageSize));
     const page = Math.min(filter.page, pageCount - 1);
@@ -69,20 +73,20 @@ export default function SolarResults() {
         <div className="detail-tabs solar-tabs" aria-label="Hojas de muestreo">{[1, 5, 10, 60].map(value => <button type="button" key={value} aria-pressed={interval === value} className={interval === value ? 'active' : ''} onClick={() => setInterval(value)}>{value === 1 ? 'Por minuto' : value === 60 ? 'Por hora' : `Cada ${value} minutos`}</button>)}</div>
         <div className="solar-body">
             <div className="solar-filters">
-                <label>Variable<select className="text-input" value={filter.variable} onChange={e => update({ variable: e.target.value, event: '', threshold: '0' })}>{variables.map(([key, text, suffix]) => <option key={key} value={key}>{text} ({suffix})</option>)}</select></label>
+                <label>Variable<select className="text-input" value={variable} onChange={e => update({ variable: e.target.value, event: '', threshold: '0' })}>{options.map(([key, text, suffix]) => <option key={key} value={key}>{text} ({suffix})</option>)}</select></label>
                 <label>Desde el minuto<input className="text-input" type="number" min="0" step="1" value={filter.from} onChange={e => update({ from: e.target.value })} placeholder="Inicio" /></label>
                 <label>Hasta el minuto<input className="text-input" type="number" min="0" step="1" value={filter.to} onChange={e => update({ to: e.target.value })} placeholder="Final" /></label>
                 <label>Umbral ({unit})<input className="text-input" type="number" min="0" step="any" value={filter.threshold} onChange={e => update({ threshold: e.target.value })} /></label>
-                <label>Tipo de cambio<select className="text-input" value={filter.event} onChange={e => update({ event: e.target.value })}><option value="">Todos</option><option value="variacion">Variación</option>{(filter.variable === 'potencia_solar_w' ? ['inicio', 'fin'] : filter.variable === 'potencia_neta_w' ? ['deficit', 'excedente'] : []).map(key => <option key={key} value={key}>{labels[key]}</option>)}</select></label>
+                <label>Tipo de cambio<select className="text-input" value={filter.event} onChange={e => update({ event: e.target.value })}><option value="">Todos</option><option value="variacion">Variación</option>{(variable === 'potencia_solar_w' ? ['inicio', 'fin'] : variable === 'potencia_neta_w' ? ['deficit', 'excedente'] : []).map(key => <option key={key} value={key}>{labels[key]}</option>)}</select></label>
             </div>
             <div className="solar-actions"><label><input type="checkbox" checked={filter.changesOnly} onChange={e => update({ changesOnly: e.target.checked })} /> Solo cambios importantes</label><button type="button" className="secondary-button" onClick={() => update(defaults())}>Limpiar filtros</button></div>
             <p className="muted-cell">Tiempo transcurrido en HH:MM, incluso después de 24 horas. Umbral 0 muestra cualquier variación; ajústalo para excluir fluctuaciones pequeñas. Los acumulados muestran incrementos, no producción instantánea.</p>
             {invalid && <p role="alert">Revisa el rango de minutos y el umbral: deben ser números no negativos y el inicio no puede superar el final.</p>}
             {error && <p role="alert">{error}</p>}
-            {selected && <p className="info-banner">Estás viendo la versión {selected.version_datos}{selected.es_actual ? ', la publicación más reciente' : ', una publicación histórica'} del documento {selected.nombre}.</p>}
+            {selected && <p className="info-banner">Estás viendo la versión {selected.version_datos}{selected.es_actual ? ', la publicación más reciente' : ', una publicación histórica'} del documento {selected.nombre}.{extended ? ' Incluye el balance de batería y del respaldo diésel.' : ''}</p>}
             {selected?.advertencias?.map(message => <p className="info-banner" key={message}>{message}</p>)}
             <div aria-live="polite">{loading ? <p>Cargando resultados…</p> : error || invalid ? null : !scenario ? <p className="solar-empty">Selecciona un escenario para consultar sus resultados.</p> : !selected ? <p className="solar-empty">Este escenario no tiene versiones con datos importados.</p> : !rows.length ? <p className="solar-empty">No hay registros para esta hoja.</p> : !visible.length ? <p className="solar-empty">No hay registros que coincidan con los filtros.</p> : <>
-                {filter.variable === 'potencia_solar_w' && minuteStart && <p className="info-banner">Primer inicio observado en la hoja Minutos: {formatTime(minuteStart.tiempo_minutos)} (umbral: {number(threshold)} W).</p>}
+                {variable === 'potencia_solar_w' && minuteStart && <p className="info-banner">Primer inicio observado en la hoja Minutos: {formatTime(minuteStart.tiempo_minutos)} (umbral: {number(threshold)} W).</p>}
                 <div className="solar-chart"><strong>{title} ({unit})</strong><p>{number(yMin)} a {number(yMax)} {unit} · {formatTime(xMin)} a {formatTime(xMax)}</p><svg viewBox="0 0 900 200" role="img" aria-label={`${title}: ${plotted.length} muestras. Los puntos destacados indican cambios.`}><line x1="20" y1="180" x2="880" y2="180" stroke="#ccd5e1" />{plotted.map(row => <circle key={row.tiempo_minutos} cx={20 + (Number(row.tiempo_minutos) - xMin) / (xMax - xMin || 1) * 860} cy={180 - (row.value - yMin) / (yMax - yMin || 1) * 160} r={row.change ? 3.5 : 2} fill={row.change ? '#b45309' : '#175cd3'}><title>{formatTime(row.tiempo_minutos)}: {number(row.value)} {unit}{row.change ? ` · ${labels[row.change]}` : ''}</title></circle>)}</svg><small>Azul: muestra · Ámbar: cambio detectado. Valores ausentes no se representan.</small></div>
                 <p>{visible.length} registros · {visible.filter(row => row.change).length} cambios. El valor anterior corresponde al registro previo de esta hoja.</p>
                 <div className="solar-table"><table><thead><tr><th>Tiempo (HH:MM)</th><th>Minuto</th><th>{title} ({unit})</th><th>Anterior ({unit})</th><th>Cambio ({unit})</th><th>Observación</th></tr></thead><tbody className="page-fade" key={`${page}-${filter.pageSize}-${interval}`}>{visible.slice(page * filter.pageSize, (page + 1) * filter.pageSize).map(row => <tr key={row.tiempo_minutos}><td>{formatTime(row.tiempo_minutos)}</td><td>{row.tiempo_minutos}</td><td>{number(row.value)}</td><td>{number(row.before)}{row.before !== null && <small> en {formatTime(row.previousTime)}</small>}</td><td>{row.value !== null && row.before !== null ? number(row.value - row.before) : '—'}</td><td>{labels[row.change] || 'Sin transición detectada'}</td></tr>)}</tbody></table></div>

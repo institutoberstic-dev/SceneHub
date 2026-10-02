@@ -2,15 +2,17 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Model;
 
 class Escenario extends Model
 {
     protected $table = 'esceanarios';
+
     protected $primaryKey = 'id';
+
     protected $fillable = [
         'nombre',
         'owner_id',
@@ -37,5 +39,14 @@ class Escenario extends Model
     public function contenidos(): HasMany
     {
         return $this->hasMany(EscenarioContenido::class)->latest();
+    }
+
+    /** Tecnologías participantes; Unity usa sus códigos para habilitar elementos 3D. */
+    public function tecnologias(): BelongsToMany
+    {
+        return $this->belongsToMany(Tecnologia::class, 'escenario_tecnologia', 'escenario_id', 'tecnologia_id')
+            ->withTimestamps()
+            ->orderBy('tecnologias.orden')
+            ->orderBy('tecnologias.nombre');
     }
 }

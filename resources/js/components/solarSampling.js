@@ -11,7 +11,21 @@ export const variables = [
     ['salmuera_acum_m3', 'Salmuera acumulada', 'm³'],
     ['lodos_gruesos_acum_paquetes', 'Lodos gruesos acumulados', 'paquetes'],
     ['lodos_finos_acum_paquetes', 'Lodos finos acumulados', 'paquetes'],
+    // Formato extendido: balance de batería y respaldo diésel.
+    ['estado_carga_pct', 'Estado de carga de la batería', '%'],
+    ['excedente_no_aprovechado_acum_wh', 'Excedente no aprovechado acumulado', 'Wh'],
+    ['energia_diesel_acum_wh', 'Energía entregada por el diésel acumulada', 'Wh'],
+    ['combustible_diesel_acum_l', 'Combustible diésel acumulado', 'L'],
+    ['demanda_no_cubierta_acum_wh', 'Demanda no cubierta acumulada', 'Wh'],
 ];
+
+/** Variables con datos en la versión seleccionada; las versiones antiguas no informan la lista. */
+export function availableVariables(version) {
+    const keys = version?.variables_disponibles;
+    if (!Array.isArray(keys) || keys.length === 0) return variables;
+    const filtered = variables.filter(([key]) => keys.includes(key));
+    return filtered.length ? filtered : variables;
+}
 
 export const numeric = value => value !== null && value !== '' && value !== undefined && Number.isFinite(Number(value)) ? Number(value) : null;
 export function formatTime(minutes) {

@@ -4,13 +4,16 @@ namespace App\Http\Controllers;
 
 use App\Models\Escenario;
 use App\Models\EscenarioContenido;
+use App\Models\Tecnologia;
 use App\Models\User;
-use App\Services\ScenarioSolarImport;
+use App\Services\SimulationResultsImport;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use ZipArchive;
 
@@ -33,6 +36,7 @@ class EscenariosController extends Controller
                 'users:id,name,email',
                 'contenidos.uploadedBy:id,name',
                 'contenidos.modifiedBy:id,name',
+                'tecnologias.categoria',
             ])
             ->withCount(['contenidos', 'users'])
             ->latest();
@@ -58,6 +62,7 @@ class EscenariosController extends Controller
                 'users:id,name,email',
                 'contenidos.uploadedBy:id,name',
                 'contenidos.modifiedBy:id,name',
+                'tecnologias.categoria',
             ])
         );
     }
@@ -72,17 +77,19 @@ class EscenariosController extends Controller
             'archivo' => ['required_without:archivos', ...$this->scenarioFileRules()],
             'archivos' => ['required_without:archivo', 'array', 'min:1', 'max:10'],
             'archivos.*' => $this->scenarioFileRules(),
-        ]);
+            ...$this->technologyRules(),
+        ], $this->technologyMessages());
 
+        $technologyIds = $this->technologyIds($validated['tecnologias'] ?? []);
         $files = $this->uploadedScenarioFiles($request);
-        $imports = array_map(fn ($file) => $this->readImport($file), $files);
+        $imports = $this->readImports($request);
 
-        return $this->createScenario($validated, $files, $imports);
+        return $this->createScenario($validated, $files, $imports, $technologyIds);
     }
 
-    private function createScenario(array $validated, array $files, array $imports)
+    private function createScenario(array $validated, array $files, array $imports, array $technologyIds = [])
     {
-        $escenario = $this->withScenarioFiles(function () use ($validated, $files, $imports) {
+        $escenario = $this->withScenarioFiles(function () use ($validated, $files, $imports, $technologyIds) {
             $user = Auth::user();
             $escenario = Escenario::create([
                 'nombre' => $validated['nombre'],
@@ -99,6 +106,7 @@ class EscenariosController extends Controller
                 'access_level' => 'owner',
                 'invited_by' => $user->id,
             ]);
+            $escenario->tecnologias()->sync($technologyIds);
 
             $this->rollbackPaths[] = $this->scenarioRoot($escenario);
             File::ensureDirectoryExists($this->scenarioRoot($escenario));
@@ -120,7 +128,7 @@ class EscenariosController extends Controller
                 ]);
 
                 if ($import) {
-                    $this->persistSolar($escenario->id, $stored['path'], $import);
+                    $this->persistSimulation($escenario->id, $stored['path'], $import);
                 }
                 if ($stored['version'] !== (float) $escenario->versiones) {
                     $escenario->update(['versiones' => $stored['version']]);
@@ -134,7 +142,7 @@ class EscenariosController extends Controller
 
         return response()->json([
             'message' => $this->uploadSummary(count($files), $imported, 'Escenario creado exitosamente.'),
-            'data' => $escenario->load(['owner:id,name,email', 'contenidos']),
+            'data' => $escenario->load(['owner:id,name,email', 'contenidos', 'tecnologias.categoria']),
         ], 201);
     }
 
@@ -210,7 +218,7 @@ class EscenariosController extends Controller
         ]);
 
         $files = $this->uploadedScenarioFiles($request);
-        $imports = array_map(fn ($file) => $this->readImport($file), $files);
+        $imports = $this->readImports($request);
         $result = $this->withScenarioFiles(function () use ($validated, $escenario, $user, $files, $imports) {
             $lockedScenario = Escenario::query()->lockForUpdate()->findOrFail($escenario->id);
             $contents = [];
@@ -243,7 +251,7 @@ class EscenariosController extends Controller
                         ->first();
 
                 if ($import && $stored['stored']) {
-                    $this->persistSolar($escenario->id, $stored['path'], $import);
+                    $this->persistSimulation($escenario->id, $stored['path'], $import);
                     $importedCount++;
                 }
 
@@ -294,7 +302,7 @@ class EscenariosController extends Controller
 
             return response()->json([
                 'message' => 'Nombre del escenario corregido exitosamente.',
-                'data' => $escenario->fresh()->load(['owner:id,name,email']),
+                'data' => $escenario->fresh()->load(['owner:id,name,email', 'tecnologias.categoria']),
             ]);
         }
 
@@ -310,7 +318,12 @@ class EscenariosController extends Controller
             'descripcion' => ['required', 'string', 'max:2000'],
             'estado' => ['required', 'in:Activo,Inactivo'],
             'archivo' => ['nullable', ...$this->scenarioFileRules()],
-        ]);
+            ...$this->technologyRules(),
+        ], $this->technologyMessages());
+
+        // Solo se modifican las tecnologías si el formulario envía el campo (vacío = quitar todas).
+        $syncTechnologies = $request->exists('tecnologias');
+        $technologyIds = $syncTechnologies ? $this->technologyIds($validated['tecnologias'] ?? [], $escenario) : [];
 
         abort_if(
             $request->hasFile('archivo')
@@ -319,9 +332,9 @@ class EscenariosController extends Controller
             'Tu rol permite editar el escenario, pero no reemplazar archivos ni crear versiones.'
         );
 
-        $import = $this->readImport($request->file('archivo'));
+        $import = $this->readImport($request->file('archivo'), 'archivo');
 
-        $newVersion = $this->withScenarioFiles(function () use ($request, $validated, $escenario, $user, $import) {
+        $newVersion = $this->withScenarioFiles(function () use ($request, $validated, $escenario, $user, $import, $syncTechnologies, $technologyIds) {
             $lockedScenario = Escenario::query()->lockForUpdate()->findOrFail($escenario->id);
             $scenarioData = [
                 'nombre' => $validated['nombre'],
@@ -352,9 +365,12 @@ class EscenariosController extends Controller
             }
 
             if (isset($stored) && $stored['stored'] && $import) {
-                $this->persistSolar($escenario->id, $stored['path'], $import);
+                $this->persistSimulation($escenario->id, $stored['path'], $import);
             }
             $lockedScenario->update($scenarioData);
+            if ($syncTechnologies) {
+                $lockedScenario->tecnologias()->sync($technologyIds);
+            }
 
             return $stored ?? null;
         });
@@ -367,7 +383,7 @@ class EscenariosController extends Controller
                         ? 'Escenario actualizado y nueva versión registrada exitosamente.'
                         : 'Escenario actualizado; el archivo fue agregado a la versión actual.'))
                 : 'Escenario actualizado exitosamente.',
-            'data' => $escenario->fresh()->load(['owner:id,name,email', 'contenidos.uploadedBy:id,name', 'contenidos.modifiedBy:id,name']),
+            'data' => $escenario->fresh()->load(['owner:id,name,email', 'contenidos.uploadedBy:id,name', 'contenidos.modifiedBy:id,name', 'tecnologias.categoria']),
         ]);
     }
 
@@ -418,9 +434,77 @@ class EscenariosController extends Controller
         return response()->download($temporary, Str::slug($escenario->nombre).'.zip')->deleteFileAfterSend(true);
     }
 
-    private function readImport(?\Illuminate\Http\UploadedFile $file): ?array
+    private function readImport(?\Illuminate\Http\UploadedFile $file, string $field = 'archivo'): ?array
     {
-        return app(ScenarioSolarImport::class)->read($file);
+        return app(SimulationResultsImport::class)->read($file, $field);
+    }
+
+    /**
+     * Lee todos los archivos de la solicitud y reúne los errores de formato de
+     * cada libro de resultados antes de responder, para corregirlos de una vez.
+     */
+    private function readImports(Request $request): array
+    {
+        $imports = [];
+        $errors = [];
+        foreach ($this->uploadedScenarioFilesByField($request) as $field => $file) {
+            try {
+                $imports[] = $this->readImport($file, $field);
+            } catch (ValidationException $exception) {
+                $errors = array_merge_recursive($errors, $exception->errors());
+                $imports[] = null;
+            }
+        }
+        if ($errors) {
+            throw ValidationException::withMessages($errors);
+        }
+
+        return $imports;
+    }
+
+    private function technologyRules(): array
+    {
+        return [
+            'tecnologias' => ['nullable', 'array', 'max:50'],
+            'tecnologias.*' => ['required', 'string', 'distinct', Rule::exists('tecnologias', 'codigo')],
+        ];
+    }
+
+    private function technologyMessages(): array
+    {
+        return [
+            'tecnologias.array' => 'Selecciona las tecnologías desde el catálogo.',
+            'tecnologias.*.exists' => 'La tecnología «:input» no pertenece al catálogo.',
+            'tecnologias.*.distinct' => 'La tecnología «:input» está repetida.',
+            'tecnologias.*.string' => 'Selecciona las tecnologías desde el catálogo.',
+            'tecnologias.*.required' => 'Selecciona las tecnologías desde el catálogo.',
+        ];
+    }
+
+    /**
+     * Convierte códigos del catálogo en ids. Una tecnología desactivada solo se
+     * acepta si el escenario ya la tenía asociada (no se pierde al editar).
+     *
+     * @param  array<int, string>  $codes
+     * @return array<int, int>
+     */
+    private function technologyIds(array $codes, ?Escenario $escenario = null): array
+    {
+        if (! $codes) {
+            return [];
+        }
+        $technologies = Tecnologia::query()->whereIn('codigo', $codes)->get(['id', 'codigo', 'activo']);
+        $current = $escenario ? $escenario->tecnologias()->pluck('tecnologias.id')->all() : [];
+        $unavailable = $technologies
+            ->filter(fn (Tecnologia $technology) => ! $technology->activo && ! in_array($technology->id, $current, true))
+            ->pluck('codigo');
+        if ($unavailable->isNotEmpty()) {
+            throw ValidationException::withMessages([
+                'tecnologias' => 'La tecnología «'.$unavailable->implode('», «').'» está desactivada en el catálogo.',
+            ]);
+        }
+
+        return $technologies->pluck('id')->all();
     }
 
     private function scenarioFileRules(): array
@@ -431,12 +515,23 @@ class EscenariosController extends Controller
     /** @return array<int, \Illuminate\Http\UploadedFile> */
     private function uploadedScenarioFiles(Request $request): array
     {
-        $files = $request->file('archivos', []);
+        return array_values($this->uploadedScenarioFilesByField($request));
+    }
+
+    /** @return array<string, \Illuminate\Http\UploadedFile> campo del formulario => archivo */
+    private function uploadedScenarioFilesByField(Request $request): array
+    {
+        $files = [];
+        foreach ((array) $request->file('archivos', []) as $index => $file) {
+            if ($file) {
+                $files['archivos.'.$index] = $file;
+            }
+        }
         if ($request->hasFile('archivo')) {
-            $files[] = $request->file('archivo');
+            $files['archivo'] = $request->file('archivo');
         }
 
-        return array_values(array_filter($files));
+        return $files;
     }
 
     private function uploadSummary(int $stored, int $imported, string $prefix): string
@@ -453,33 +548,48 @@ class EscenariosController extends Controller
         return $parts ? $prefix.' '.ucfirst(implode(' y ', $parts)).'.' : $prefix;
     }
 
-    private function persistSolar(int $scenarioId, string $path, ?array $import): void
+    private function persistSimulation(int $scenarioId, string $path, ?array $import): void
     {
         if (! $import) {
             return;
         }
         $content = EscenarioContenido::where('escenario_id', $scenarioId)->where('ruta', $path)->latest('id')->firstOrFail();
-        app(ScenarioSolarImport::class)->persist($scenarioId, $content->id, $import);
-        app(\App\Services\DataVersions::class)->register($scenarioId, $content->id, 'solar', $import['rows']);
+        app(SimulationResultsImport::class)->persist($scenarioId, $content->id, $import);
+        app(\App\Services\DataVersions::class)->register($scenarioId, $content->id, SimulationResultsImport::VERSION_TYPE, $import['rows']);
     }
 
-    public function solarResults(Request $request, Escenario $escenario)
+    /** Columna de resultados_simulacion => clave expuesta a la vista de resultados. */
+    public const SIMULATION_RESULT_FIELDS = [
+        'caudal' => 'caudal_m3_h',
+        'radiacion_solar' => 'irradiancia_w_m2',
+        'temperatura' => 'temperatura_c',
+        'velocidad_viento' => 'velocidad_viento_m_s',
+        'potencia_solar' => 'potencia_solar_w',
+        'potencia_neta' => 'potencia_neta_w',
+        'consumo_planta' => 'potencia_consumida_planta_w',
+        // El informe del Escenario 1 confirma que la columna rotulada «(W)» está en Wh.
+        'energia_almacenada' => 'energia_almacenada_wh',
+        'agua_desalinizada' => 'agua_desalinizada_acum_m3',
+        'salmuera' => 'salmuera_acum_m3',
+        'lodos_gruesos' => 'lodos_gruesos_acum_paquetes',
+        'lodos_finos' => 'lodos_finos_acum_paquetes',
+        'estado_carga' => 'estado_carga_pct',
+        'excedente_no_aprovechado' => 'excedente_no_aprovechado_acum_wh',
+        'energia_diesel' => 'energia_diesel_acum_wh',
+        'combustible_diesel' => 'combustible_diesel_acum_l',
+        'demanda_no_cubierta' => 'demanda_no_cubierta_acum_wh',
+    ];
+
+    public function simulationResults(Request $request, Escenario $escenario)
     {
-        $mapping = [
-            'caudal' => 'caudal_m3_h', 'radiacion_solar' => 'irradiancia_w_m2',
-            'temperatura' => 'temperatura_c', 'velocidad_viento' => 'velocidad_viento_m_s',
-            'potencia_solar' => 'potencia_solar_w', 'potencia_neta' => 'potencia_neta_w',
-            'consumo_planta' => 'potencia_consumida_planta_w',
-            'agua_desalinizada' => 'agua_desalinizada_acum_m3', 'salmuera' => 'salmuera_acum_m3',
-            'lodos_gruesos' => 'lodos_gruesos_acum_paquetes', 'lodos_finos' => 'lodos_finos_acum_paquetes',
-        ];
+        $mapping = self::SIMULATION_RESULT_FIELDS;
         $versions = DB::table('data_versions')
             ->where('escenario_id', $escenario->id)
-            ->where('tipo', 'solar')
+            ->where('tipo', SimulationResultsImport::VERSION_TYPE)
             ->orderByDesc('revision')
             ->get();
         $files = $escenario->contenidos()->whereIn('id', $versions->pluck('archivo_id'))->get()->keyBy('id');
-        $groups = DB::table('solar_data')
+        $groups = DB::table(SimulationResultsImport::TABLE)
             ->whereIn('archivo_id', $versions->pluck('archivo_id'))
             ->orderBy('tiempo_minutos')
             ->get()
@@ -488,13 +598,18 @@ class EscenariosController extends Controller
         $items = $versions->map(function ($version, $index) use ($files, $groups, $mapping) {
             $file = $files->get($version->archivo_id);
             $samples = ['1' => [], '5' => [], '10' => [], '60' => []];
+            $available = [];
             foreach ($groups->get($version->archivo_id, collect()) as $row) {
-                $point = ['tiempo_minutos' => (int) $row->tiempo_minutos,
-                    'energia_almacenada_wh' => null,
-                    'energia_almacenada_original' => $row->energia_almacenada];
+                $point = ['tiempo_minutos' => (int) $row->tiempo_minutos];
                 foreach ($mapping as $source => $target) {
-                    $point[$target] = $row->$source === null ? null : (float) $row->$source;
+                    $value = $row->$source ?? null;
+                    $point[$target] = $value === null ? null : (float) $value;
+                    if ($value !== null) {
+                        $available[$target] = true;
+                    }
                 }
+                // Clave histórica: algunos clientes leían el valor sin convertir.
+                $point['energia_almacenada_original'] = $point['energia_almacenada_wh'];
                 $samples[(string) $row->intervalo_minutos][] = $point;
             }
 
@@ -506,8 +621,9 @@ class EscenariosController extends Controller
                 'revision' => (int) $version->revision,
                 'es_actual' => $index === 0,
                 'publicada_en' => $version->created_at,
+                'variables_disponibles' => array_values(array_filter($mapping, fn ($target) => isset($available[$target]))),
                 'muestreos' => $samples,
-                'advertencias' => ['La unidad de energía almacenada está pendiente de confirmar; se conserva el valor original rotulado W.'],
+                'advertencias' => [],
             ];
         })->values();
 

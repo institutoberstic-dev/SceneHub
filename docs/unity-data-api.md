@@ -1,6 +1,6 @@
 # GET de datos y versiones para Unity
 
-Las rutas globales antiguas `/api/features`, `/api/simu-solars`, `/api/send-features` y `/api/send-simu-sol` fueron eliminadas. Los clientes deben usar las API solares por escenario y la API emocional directa por webinar.
+Las rutas globales antiguas `/api/features`, `/api/simu-solars`, `/api/send-features` y `/api/send-simu-sol` fueron eliminadas. Los clientes deben usar las API de resultados de simulación por escenario y la API emocional directa por webinar.
 
 Las rutas públicas actuales están en `routes/api.php`:
 
@@ -8,27 +8,28 @@ Las rutas públicas actuales están en `routes/api.php`:
 | --- | --- |
 | GET `/api/emociones` | Webinars con datos emocionales, nombre correlacionado, promedio y registros completos. |
 | GET `/api/emociones/{meeting}` | Nombre y metadatos del webinar, promedio emocional y todos sus registros completos. |
-| GET `/api/escenarios` | Listado de simulaciones. |
-| GET `/api/escenarios/{escenario}` | Información y archivos del escenario. |
-| GET `/api/escenarios/{escenario}/resultados-solares` | Datos solares adaptados a las vistas del panel. |
-| GET `/api/escenarios/{escenario}/solar` | Descarga de resultados solares, admite `version`. |
-| GET `/api/escenarios/{escenario}/versiones-datos?tipo=solar` | Consulta de cambios y versiones solares. |
+| GET `/api/escenarios` | Listado de simulaciones, cada una con sus `tecnologias`. |
+| GET `/api/escenarios/{escenario}` | Información, archivos y `tecnologias` participantes del escenario. |
+| GET `/api/tecnologias` | Catálogo de tecnologías (`codigo`, `nombre`, `activo`). |
+| GET `/api/escenarios/{escenario}/resultados-simulacion` | Resultados de simulación adaptados a las vistas del panel (alias: `/resultados`, `/resultados-solares`). |
+| GET `/api/escenarios/{escenario}/simulacion` | Descarga de resultados de simulación, admite `version` (alias histórico: `/solar`). |
+| GET `/api/escenarios/{escenario}/versiones-datos?tipo=simulacion` | Consulta de cambios y versiones (también acepta `tipo=solar`). |
 | POST `/api/unity/imagenes` | Carga libre de imágenes desde Unity (ver «Cargar imágenes desde Unity»). |
 
-Las APIs externas son de solo lectura, salvo `POST /api/unity/imagenes`, que solo guarda imágenes en el almacenamiento y no modifica datos solares, emocionales ni escenarios. Las cargas solares y emocionales requieren sesión y permisos dentro del proyecto. El módulo Emociones guarda los archivos mediante la ruta privada `POST /emociones-data`; esta operación no se expone bajo `/api`. Usuarios y roles se consultan internamente mediante `/users-data` y `/roles-data`, con sesión y rol administrador; `/session-user` requiere sesión.
+Las APIs externas son de solo lectura, salvo `POST /api/unity/imagenes`, que solo guarda imágenes en el almacenamiento y no modifica resultados de simulación, datos emocionales ni escenarios. Las cargas de resultados y emocionales requieren sesión y permisos dentro del proyecto. El módulo Emociones guarda los archivos mediante la ruta privada `POST /emociones-data`; esta operación no se expone bajo `/api`. Usuarios y roles se consultan internamente mediante `/users-data` y `/roles-data`, con sesión y rol administrador; `/session-user` requiere sesión.
 
 ## Consultar si hay novedades
 
-`GET /api/escenarios/ID/versiones-datos?tipo=solar`
+`GET /api/escenarios/ID/versiones-datos?tipo=simulacion`
 
-El control de versiones solo aplica a resultados solares. Los datos emocionales se consultan por webinar y no tienen versionamiento.
+El control de versiones solo aplica a resultados de simulación. `tipo=solar` es el nombre histórico y se sigue aceptando: devuelve el mismo estado y versión, con `url_datos` apuntando a `/solar`. Con `tipo=simulacion`, `url_datos` apunta a `/simulacion`. Ambas rutas entregan exactamente los mismos datos y el mismo `sha256`, así que cambiar de una a otra no obliga a Unity a volver a descargar. Los datos emocionales se consultan por webinar y no tienen versionamiento.
 
 Respuesta orientativa:
 
 ```json
 {
   "escenario_id": 1,
-  "tipo": "solar",
+  "tipo": "simulacion",
   "estado": "actualizacion_disponible",
   "mensaje": "Hay una actualización disponible. Pulsa Actualizar para descargarla.",
   "hay_datos": true,
@@ -37,7 +38,7 @@ Respuesta orientativa:
   "version": "1.1",
   "sha256": "identificador de contenido de 64 caracteres",
   "versiones": [],
-  "url_datos": "/api/escenarios/1/solar?version=1.1"
+  "url_datos": "/api/escenarios/1/simulacion?version=1.1"
 }
 ```
 
@@ -105,13 +106,37 @@ Respuesta orientativa:
 
 `GET /api/emociones` devuelve la misma estructura dentro del arreglo `webinars`, una entrada por cada reunión que tenga datos locales. Las claves de correlación permanecen en el servidor y no aparecen en el JSON. La API no calcula ni inventa valores. El promedio admite una hoja con los tres encabezados y un registro por reunión. El archivo completo requiere las 17 columnas de detalle del formato entregado. El promedio numérico antiguo de 11 columnas ya no se admite. Cada carga reemplaza solo su formato para los meetings incluidos, conservando el otro formato. No hay versiones emocionales.
 
-## Descargar Solar
+## Descargar resultados de simulación
 
-`GET /api/escenarios/ID/solar?version=1.0`
+`GET /api/escenarios/ID/simulacion?version=1.0` (alias histórico: `/api/escenarios/ID/solar`; el campo `tipo` de la respuesta repite el nombre usado)
 
-Devuelve metadatos y `muestreos` con claves `"1"`, `"5"`, `"10"` y `"60"`. Las filas contienen `tiempo_minutos`, `intervalo_minutos` y los nombres originales del almacenamiento: `caudal`, `radiacion_solar`, `temperatura`, `velocidad_viento`, `potencia_solar`, `potencia_neta`, `energia_almacenada`, `consumo_planta`, `agua_desalinizada`, `salmuera`, `lodos_gruesos`, `lodos_finos`. Incluye un diccionario `unidades`. La unidad de almacenamiento queda nula hasta confirmarse; el valor original se conserva.
+Los datos se guardan en la tabla `resultados_simulacion` (antes `solar_data`): la serie no es solo solar, incluye clima, energía, agua y residuos.
 
-La descarga devuelve la serie completa para el JSON local; la paginación es visual y no corta el archivo de Unity. La web conserva su endpoint `/api/escenarios/ID/resultados-solares` con los campos adaptados a la interfaz y `version_datos` por archivo.
+Devuelve metadatos y `muestreos` con claves `"1"`, `"5"`, `"10"` y `"60"`. Las filas contienen `tiempo_minutos`, `intervalo_minutos` y los nombres del almacenamiento:
+
+| Campo | Unidad | Columna del Excel |
+| --- | --- | --- |
+| `caudal` | m3/h | Caudal (m3/h) |
+| `radiacion_solar` | W/m2 | Radiación solar (W/m2) |
+| `temperatura` | °C | Temperatura (°C) (también se acepta «Teperatura») |
+| `velocidad_viento` | m/s | Velocidad del viento (m/s) |
+| `potencia_solar` | W | Potencia solar (W) |
+| `potencia_neta` | W | Potencia neta (W) |
+| `energia_almacenada` | Wh | Energía almacenada (W) — el Excel la rotula W, pero el informe del Escenario 1 confirma que es Wh |
+| `consumo_planta` | W | Consumo planta (W) |
+| `agua_desalinizada` | m3 (acumulado) | Agua desalinizada (m3) |
+| `salmuera` | m3 (acumulado) | Salmuera (m3) |
+| `lodos_gruesos` | paquetes de 10 kg (acumulado) | Lodos gruesos (N.º paquetes de 10 kg) |
+| `lodos_finos` | paquetes de 10 kg (acumulado) | Lodos finos (N.º paquetes de 10 kg) |
+| `estado_carga` | % | % estado de carga |
+| `excedente_no_aprovechado` | Wh (acumulado) | Wh acum. excedente no aprovechado |
+| `energia_diesel` | Wh (acumulado) | Wh acum. entregados por el diesel |
+| `combustible_diesel` | L (acumulado) | L acum. de combustible |
+| `demanda_no_cubierta` | Wh (acumulado) | Wh acum. de demanda no cubierta |
+
+Las cinco últimas pertenecen al formato extendido (18 columnas, p. ej. `resultados escenario 1 1.xlsx`). En versiones cargadas con el formato básico de 13 columnas llegan como `null`: Unity debe tratarlas como «sin dato», nunca como cero. El diccionario `unidades` acompaña cada respuesta.
+
+La descarga devuelve la serie completa para el JSON local; la paginación es visual y no corta el archivo de Unity. La web conserva su endpoint `/api/escenarios/ID/resultados-simulacion` (alias `/resultados-solares`) con los campos adaptados a la interfaz y `version_datos` por archivo.
 
 ## Prueba manual
 
@@ -120,7 +145,7 @@ La descarga devuelve la serie completa para el JSON local; la paginación es vis
 3. Consultarlo con `version_actual=1.0`: debe devolver `sin_cambios` y `hay_datos=true`.
 4. Cambiar un valor en una copia del Excel y cargarla en el mismo escenario: debe publicar `1.1` y avisar al cliente con `1.0`.
 5. Descargar `?version=1.0` y `?version=1.1`: cada una conserva sus valores. Cambiar únicamente el nombre o el orden de las filas no publica otra versión si el contenido coincide con el último.
-6. Repetir el manifiesto con `tipo=solar`. `Resultados caso 1.xlsx` alimenta las cuatro hojas (`Minutos`, `Cada5min`, `Cada10min` y `Horas`); cambiar de página o tamaño no recarga toda la pantalla.
+6. Repetir el manifiesto con `tipo=simulacion` (o `tipo=solar`). `Resultados caso 1.xlsx` alimenta las cuatro hojas (`Minutos`, `Cada5min`, `Cada10min` y `Horas`); cambiar de página o tamaño no recarga toda la pantalla.
 
 ## Cargar imágenes desde Unity
 
@@ -183,6 +208,56 @@ Para varias imágenes en una sola solicitud, repetir `form.AddBinaryData("imagen
 
 ## Consultar el escenario completo
 
-Cada escenario representa una alternativa de simulación solar. Sus sucesivas cargas son revisiones de esa alternativa: se mantiene el historial y se puede consultar una versión concreta. La validación comprueba formato, columnas, hojas y tiempos; no puede determinar si los valores representan una propuesta científicamente válida. Las emociones pertenecen a meetings y conservan detalle y promedio independientes.
+Cada escenario representa una alternativa de simulación. Sus sucesivas cargas son revisiones de esa alternativa: se mantiene el historial y se puede consultar una versión concreta. La validación comprueba formato, columnas, hojas y tiempos; no puede determinar si los valores representan una propuesta científicamente válida. Las emociones pertenecen a meetings y conservan detalle y promedio independientes.
 
 `GET /api/escenarios/ID` devuelve los metadatos y contenidos del escenario. Las rutas antiguas de emociones bajo escenarios y `/api/users`, `/api/roles`, `/api/me` están retiradas.
+
+## Tecnologías participantes
+
+Cada escenario declara qué tecnologías intervienen en la simulación. Unity usa el `codigo` para decidir qué elementos 3D, interfaces, animaciones y sonidos habilita; la asociación entre códigos y objetos 3D es responsabilidad de Unity. SceneHub no implementa ese comportamiento.
+
+`GET /api/escenarios/ID` incluye:
+
+```json
+{
+  "id": 1,
+  "nombre": "Escenario 1",
+  "descripcion": "Producción de agua desalinizada",
+  "tecnologias": [
+    {
+      "codigo": "PANEL_SOLAR",
+      "nombre": "Paneles solares",
+      "categoria": { "codigo": "GENERACION_ENERGIA", "nombre": "Generación de energía" }
+    },
+    {
+      "codigo": "DIESEL",
+      "nombre": "Generador diésel",
+      "categoria": { "codigo": "GENERACION_ENERGIA", "nombre": "Generación de energía" }
+    },
+    {
+      "codigo": "DESALINIZADORA",
+      "nombre": "Desalinizadora",
+      "categoria": { "codigo": "TRATAMIENTO_AGUA", "nombre": "Tratamiento de agua" }
+    }
+  ]
+}
+```
+
+`GET /api/tecnologias` devuelve el catálogo completo (`codigo`, `nombre`, `categoria`, `activo`), incluidas las tecnologías desactivadas (`"activo": false`), para que Unity reconozca códigos históricos.
+
+Cada tecnología pertenece a una categoría, también con código estable. `categoria` puede ser `null` si una tecnología nueva aún no fue clasificada.
+
+| Categoría (código) | Código | Nombre visible |
+| --- | --- | --- |
+| Generación de energía (`GENERACION_ENERGIA`) | `PANEL_SOLAR` | Paneles solares |
+| | `TURBINAS_EOLICAS` | Turbinas eólicas |
+| | `DIESEL` | Generador diésel |
+| Tratamiento de agua (`TRATAMIENTO_AGUA`) | `DESALINIZADORA` | Desalinizadora |
+| Hidrógeno y amoniaco (`HIDROGENO_AMONIACO`) | `ELECTROLIZADORA` | Electrolizadora |
+| | `HABER-BOSH` | Reactor Haber-Bosch |
+| Valorización de residuos (`VALORIZACION_RESIDUOS`) | `GEOPOLIMEROS` | Planta de valorización de geopolímeros |
+| | `MINERIA_LIQUIDA` | Planta de valorización de salmuera |
+
+Reglas: el código es estable y no depende del nombre visible (cambiar el nombre no rompe Unity); un escenario puede tener cero, una o varias tecnologías, y una tecnología puede estar en varios escenarios; una tecnología no se borra, se desactiva. Unity debe ignorar los códigos que no reconozca.
+
+El catálogo y sus categorías se cargan con `php artisan db:seed --class=TecnologiasSeeder` (idempotente: puede ejecutarse en cada despliegue). En la web se seleccionan con casillas al crear o actualizar el escenario; no existe campo de texto libre y el servidor rechaza cualquier código fuera del catálogo.

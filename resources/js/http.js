@@ -51,3 +51,10 @@ export function errorMessage(error, fallback = 'No fue posible completar la soli
     if (errors) return Object.values(errors).flat()[0];
     return error.response?.data?.message || fallback;
 }
+
+/** Todos los mensajes de error de la respuesta (útil para validaciones de archivos con varias filas). */
+export function errorList(error, fallback = 'No fue posible completar la solicitud.') {
+    const errors = error.response?.data?.errors;
+    if (errors) return [...new Set(Object.values(errors).flat())];
+    return [error.response?.data?.message || fallback];
+}

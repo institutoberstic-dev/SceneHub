@@ -6,6 +6,7 @@ use App\Http\Controllers\EscenariosController;
 use App\Http\Controllers\LoginController;
 use App\Http\Controllers\ResultadosController;
 use App\Http\Controllers\RolesController;
+use App\Http\Controllers\TecnologiasController;
 use App\Http\Controllers\UserController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -26,10 +27,11 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::post('/log-out', [LoginController::class, 'logout'])->name('logout');
 
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard.index');
+    Route::get('/tecnologias-data', [TecnologiasController::class, 'index'])->middleware('permission:escenarios.leer')->name('tecnologias.data.web');
     Route::get('/escenarios-data', [EscenariosController::class, 'data'])->middleware('permission:escenarios.leer')->name('escenarios.data.web');
     Route::get('/escenarios-data/{escenario}', [EscenariosController::class, 'detail'])->middleware(['permission:escenarios.leer', 'scenario.access'])->name('escenarios.detail.web');
-    Route::get('/escenarios-data/{escenario}/resultados-solares', [EscenariosController::class, 'solarResults'])->middleware(['permission:escenarios.leer', 'scenario.access'])->name('escenarios.solar.web');
-    Route::get('/escenarios-data/{escenario}/resultados', [EscenariosController::class, 'solarResults'])->middleware(['permission:escenarios.leer', 'scenario.access'])->name('escenarios.results.web');
+    Route::get('/escenarios-data/{escenario}/resultados-solares', [EscenariosController::class, 'simulationResults'])->middleware(['permission:escenarios.leer', 'scenario.access'])->name('escenarios.solar.web');
+    Route::get('/escenarios-data/{escenario}/resultados', [EscenariosController::class, 'simulationResults'])->middleware(['permission:escenarios.leer', 'scenario.access'])->name('escenarios.results.web');
     Route::get('/emociones-data', [EmocionesController::class, 'data'])->middleware('permission:emociones.leer')->name('emociones.data.web');
     Route::get('/emociones-data/{meeting}', [EmocionesController::class, 'detail'])->whereNumber('meeting')->middleware('permission:emociones.leer')->name('emociones.detail.web');
     Route::post('/emociones-data', [EmocionesController::class, 'uploadInternal'])->middleware('permission:emociones.cargar')->name('emociones.upload.web');

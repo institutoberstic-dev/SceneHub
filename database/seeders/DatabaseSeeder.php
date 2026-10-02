@@ -17,6 +17,7 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         $this->call(RolesAndPermissionsSeeder::class);
+        $this->call(TecnologiasSeeder::class);
 
         $admin = User::updateOrCreate([
             'email' => 'admin@example.com',
