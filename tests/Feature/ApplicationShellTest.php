@@ -106,6 +106,7 @@ class ApplicationShellTest extends TestCase
             ->postJson('/escenarios-store', [
                 'nombre' => 'Escenario del owner',
                 'descripcion' => 'Contenido de prueba',
+                'archivo' => UploadedFile::fake()->create('informe.docx', 10),
             ])
             ->assertCreated()
             ->assertJsonPath('data.owner_id', $owner->id);
@@ -147,6 +148,7 @@ class ApplicationShellTest extends TestCase
         $scenarioId = $this->actingAs($owner)->postJson('/escenarios-store', [
             'nombre' => 'Escenario compartido',
             'descripcion' => 'Prueba de accesos',
+            'archivo' => UploadedFile::fake()->create('informe.docx', 10),
         ])->json('data.id');
 
         $this->postJson("/escenarios/{$scenarioId}/members", [
@@ -189,6 +191,7 @@ class ApplicationShellTest extends TestCase
         $scenarioId = $this->actingAs($owner)->postJson('/escenarios-store', [
             'nombre' => 'Nombre original',
             'descripcion' => 'Descripción del owner',
+            'archivo' => UploadedFile::fake()->create('informe.docx', 10),
         ])->json('data.id');
 
         $this->actingAs($this->admin)->postJson('/escenarios-store', [
@@ -217,6 +220,7 @@ class ApplicationShellTest extends TestCase
         $scenarioId = $this->actingAs($owner)->postJson('/escenarios-store', [
             'nombre' => 'Escenario con resultados',
             'descripcion' => 'Seguimiento de resultados',
+            'archivo' => UploadedFile::fake()->create('informe.docx', 10),
         ])->json('data.id');
 
         $scenarioDirectory = storage_path("app/public/escenarios/{$scenarioId}-escenario-con-resultados");
@@ -224,7 +228,7 @@ class ApplicationShellTest extends TestCase
         try {
             $this->post('/escenarios/'.$scenarioId.'/contenidos', [
                 'nombre' => 'Resultado inicial',
-                'archivo' => UploadedFile::fake()->create('resultado.json', 2, 'application/json'),
+                'archivo' => UploadedFile::fake()->create('resultado.docx', 2),
             ])->assertCreated()
                 ->assertJsonPath('data.nombre', 'Resultado inicial')
                 ->assertJsonPath('data.version', '1.0');
@@ -233,17 +237,17 @@ class ApplicationShellTest extends TestCase
                 'escenario_id' => $scenarioId,
                 'uploaded_by' => $owner->id,
                 'nombre' => 'Resultado inicial',
-                'tipo' => 'resultado',
+                'tipo' => 'documento',
             ]);
-            $this->assertFileExists($scenarioDirectory.'/1.0/resultado.json');
+            $this->assertFileExists($scenarioDirectory.'/1.0/resultado.docx');
 
             $this->post('/escenarios/'.$scenarioId.'/contenidos', [
                 'nombre' => 'Resultado repetido',
-                'archivo' => UploadedFile::fake()->create('resultado.json', 2, 'application/json'),
+                'archivo' => UploadedFile::fake()->create('resultado.docx', 2),
             ])->assertOk()
-                ->assertJsonPath('message', 'El archivo no presenta cambios; no se almacenó una copia duplicada.');
+                ->assertJsonPath('message', 'Los archivos no presentan cambios; no se almacenaron copias duplicadas.');
 
-            $this->assertDatabaseCount('escenario_contenidos', 1);
+            $this->assertDatabaseCount('escenario_contenidos', 2);
         } finally {
             File::deleteDirectory($scenarioDirectory);
         }
@@ -257,7 +261,7 @@ class ApplicationShellTest extends TestCase
         $scenarioId = $this->actingAs($owner)->post('/escenarios-store', [
             'nombre' => 'Escenario original',
             'descripcion' => 'Primera versión',
-            'archivo' => UploadedFile::fake()->createWithContent('base.json', '{"value":1}'),
+            'archivo' => UploadedFile::fake()->createWithContent('base.docx', '{"value":1}'),
         ])->json('data.id');
 
         $scenarioDirectory = storage_path("app/public/escenarios/{$scenarioId}-escenario-original");
@@ -268,19 +272,19 @@ class ApplicationShellTest extends TestCase
                 'nombre' => 'Escenario actualizado',
                 'descripcion' => 'Segunda entrega',
                 'estado' => 'Activo',
-                'archivo' => UploadedFile::fake()->createWithContent('adicional.json', '{"extra":true}'),
+                'archivo' => UploadedFile::fake()->createWithContent('adicional.docx', '{"extra":true}'),
             ])->assertOk()
                 ->assertJsonPath('data.versiones', 1);
 
-            $this->assertFileExists($scenarioDirectory.'/1.0/base.json');
-            $this->assertFileExists($scenarioDirectory.'/1.0/adicional.json');
+            $this->assertFileExists($scenarioDirectory.'/1.0/base.docx');
+            $this->assertFileExists($scenarioDirectory.'/1.0/adicional.docx');
 
             $this->post('/escenarios/'.$scenarioId, [
                 '_method' => 'PUT',
                 'nombre' => 'Escenario actualizado',
                 'descripcion' => 'Tercera entrega',
                 'estado' => 'Activo',
-                'archivo' => UploadedFile::fake()->createWithContent('base.json', '{"value":2}'),
+                'archivo' => UploadedFile::fake()->createWithContent('base.docx', '{"value":2}'),
             ])->assertOk()
                 ->assertJsonPath('data.versiones', 1.1);
 
@@ -292,30 +296,30 @@ class ApplicationShellTest extends TestCase
             $this->assertDatabaseHas('escenario_contenidos', [
                 'escenario_id' => $scenarioId,
                 'version' => 1.1,
-                'tipo' => 'actualizacion',
+                'tipo' => 'documento',
                 'modified_by' => $owner->id,
             ]);
-            $this->assertFileExists($scenarioDirectory.'/1.1/base.json');
-            $this->assertFileExists($scenarioDirectory.'/1.1/adicional.json');
-            $this->assertSame('{"value":1}', File::get($scenarioDirectory.'/1.0/base.json'));
-            $this->assertSame('{"value":2}', File::get($scenarioDirectory.'/1.1/base.json'));
+            $this->assertFileExists($scenarioDirectory.'/1.1/base.docx');
+            $this->assertFileExists($scenarioDirectory.'/1.1/adicional.docx');
+            $this->assertSame('{"value":1}', File::get($scenarioDirectory.'/1.0/base.docx'));
+            $this->assertSame('{"value":2}', File::get($scenarioDirectory.'/1.1/base.docx'));
 
             // También debe reconocer archivos de versiones anteriores si una carpeta
             // existente no contiene una instantánea acumulativa completa.
-            File::delete($scenarioDirectory.'/1.1/base.json');
+            File::delete($scenarioDirectory.'/1.1/base.docx');
 
             $this->post('/escenarios/'.$scenarioId, [
                 '_method' => 'PUT',
                 'nombre' => 'Escenario actualizado',
                 'descripcion' => 'Cuarta entrega',
                 'estado' => 'Activo',
-                'archivo' => UploadedFile::fake()->createWithContent('base.json', '{"value":3}'),
+                'archivo' => UploadedFile::fake()->createWithContent('base.docx', '{"value":3}'),
             ])->assertOk()
                 ->assertJsonPath('data.versiones', 1.2);
 
-            $this->assertFileExists($scenarioDirectory.'/1.2/base.json');
-            $this->assertFileExists($scenarioDirectory.'/1.2/adicional.json');
-            $this->assertSame('{"value":3}', File::get($scenarioDirectory.'/1.2/base.json'));
+            $this->assertFileExists($scenarioDirectory.'/1.2/base.docx');
+            $this->assertFileExists($scenarioDirectory.'/1.2/adicional.docx');
+            $this->assertSame('{"value":3}', File::get($scenarioDirectory.'/1.2/base.docx'));
 
             $contentCount = DB::table('escenario_contenidos')
                 ->where('escenario_id', $scenarioId)
@@ -326,7 +330,7 @@ class ApplicationShellTest extends TestCase
                 'nombre' => 'Escenario actualizado',
                 'descripcion' => 'Entrega sin cambios de archivo',
                 'estado' => 'Activo',
-                'archivo' => UploadedFile::fake()->createWithContent('base.json', '{"value":3}'),
+                'archivo' => UploadedFile::fake()->createWithContent('base.docx', '{"value":3}'),
             ])->assertOk()
                 ->assertJsonPath('data.versiones', 1.2)
                 ->assertJsonPath('message', 'Escenario actualizado; el archivo no cambió y no se almacenó nuevamente.');
@@ -353,6 +357,7 @@ class ApplicationShellTest extends TestCase
         $scenarioId = $this->actingAs($owner)->postJson('/escenarios-store', [
             'nombre' => 'Escenario con equipo',
             'descripcion' => 'Prueba de distribución de permisos',
+            'archivo' => UploadedFile::fake()->create('informe.docx', 10),
         ])->json('data.id');
 
         $this->postJson("/escenarios/{$scenarioId}/members", [
@@ -371,7 +376,7 @@ class ApplicationShellTest extends TestCase
         ])->assertOk();
 
         $this->post("/escenarios/{$scenarioId}/contenidos", [
-            'archivo' => UploadedFile::fake()->create('reemplazo.json', 2, 'application/json'),
+            'archivo' => UploadedFile::fake()->create('reemplazo.docx', 2),
         ])->assertForbidden();
 
         $this->actingAs($collaborator)->putJson("/escenarios/{$scenarioId}", [
@@ -381,7 +386,7 @@ class ApplicationShellTest extends TestCase
         ])->assertForbidden();
 
         $this->post("/escenarios/{$scenarioId}/contenidos", [
-            'archivo' => UploadedFile::fake()->create('version-no-permitida.json', 2, 'application/json'),
+            'archivo' => UploadedFile::fake()->create('version-no-permitida.docx', 2),
         ])->assertForbidden();
     }
 }

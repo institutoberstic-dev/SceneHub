@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\User;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
@@ -87,5 +88,53 @@ class UserAccessManagementTest extends TestCase
             'modules' => ['escenarios'],
             'is_active' => false,
         ])->assertUnprocessable()->assertJsonPath('message', 'Debe permanecer al menos un administrador activo.');
+    }
+
+    public function test_users_with_scenarios_module_can_be_invited_to_a_scenario(): void
+    {
+        $scenarioPermissions = [
+            'escenarios.leer', 'escenarios.crear', 'escenarios.actualizar',
+            'escenarios.eliminar', 'escenarios.invitar', 'escenarios.versionar',
+            'archivos.leer', 'archivos.actualizar',
+        ];
+
+        $owner = User::factory()->create(['is_active' => true]);
+        $owner->assignRole('usuario');
+        $owner->givePermissionTo($scenarioPermissions);
+
+        $member = User::factory()->create(['is_active' => true]);
+        $member->assignRole('usuario');
+        $member->givePermissionTo($scenarioPermissions);
+
+        $emotionsOnly = User::factory()->create(['is_active' => true]);
+        $emotionsOnly->assignRole('usuario');
+        $emotionsOnly->givePermissionTo(['emociones.leer']);
+
+        $scenarioId = $this->actingAs($owner)->postJson('/escenarios-store', [
+            'nombre' => 'Escenario con usuario de módulo',
+            'descripcion' => 'Regresión de invitaciones',
+            'archivo' => UploadedFile::fake()->create('informe.docx', 10),
+        ])->json('data.id');
+
+        $this->postJson("/escenarios/{$scenarioId}/members", [
+            'email' => $member->email,
+            'access_level' => 'supervisor',
+        ])->assertOk();
+
+        $this->assertDatabaseHas('escenarios_users', [
+            'escenario_id' => $scenarioId,
+            'user_id' => $member->id,
+            'access_level' => 'supervisor',
+        ]);
+
+        $this->postJson("/escenarios/{$scenarioId}/members", [
+            'email' => $emotionsOnly->email,
+            'access_level' => 'supervisor',
+        ])->assertUnprocessable()->assertJsonPath('message', 'La cuenta no tiene habilitado el módulo de Escenarios.');
+
+        $this->postJson("/escenarios/{$scenarioId}/members", [
+            'email' => $this->admin->email,
+            'access_level' => 'supervisor',
+        ])->assertUnprocessable();
     }
 }

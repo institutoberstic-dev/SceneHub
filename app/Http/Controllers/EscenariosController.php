@@ -164,7 +164,9 @@ class EscenariosController extends Controller
 
         $member = User::where('email', $validated['email'])->firstOrFail();
         abort_if($member->id === $escenario->owner_id, 422, 'El owner ya tiene acceso total al escenario.');
-        abort_unless($member->hasAnyRole(['cliente', 'gestor_escenarios', 'consulta']), 422, 'La cuenta no tiene un rol habilitado para participar en escenarios.');
+        abort_if($member->hasRole('admin'), 422, 'El administrador ya supervisa todos los escenarios; no necesita invitación.');
+        abort_unless($member->is_active, 422, 'La cuenta está deshabilitada.');
+        abort_unless($member->can('escenarios.leer'), 422, 'La cuenta no tiene habilitado el módulo de Escenarios.');
 
         $escenario->users()->syncWithoutDetaching([
             $member->id => [
