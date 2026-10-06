@@ -15,7 +15,7 @@ import {
     TrendingUp,
 } from 'lucide-react';
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import Brand from '../components/Brand';
 import { csrfRequest, errorMessage } from '../http';
 
@@ -33,6 +33,9 @@ export default function LoginPage() {
     const [submitting, setSubmitting] = useState(false);
     const [message, setMessage] = useState(() => new URLSearchParams(window.location.search).has('disabled')
         ? 'Tu cuenta está inhabilitada. Contacta al administrador.'
+        : '');
+    const [notice] = useState(() => new URLSearchParams(window.location.search).has('reset')
+        ? 'Tu contraseña fue restablecida. Ya puedes iniciar sesión.'
         : '');
     const [form, setForm] = useState({ email: '', password: '', remember: true });
 
@@ -118,9 +121,10 @@ export default function LoginPage() {
 
                         <div className="login-options">
                             <label><input type="checkbox" checked={form.remember} onChange={(event) => setForm({ ...form, remember: event.target.checked })} /> Recordarme</label>
-                            <span>¿Olvidaste tu contraseña?</span>
+                            <Link to="/recuperar-contrasena">¿Olvidaste tu contraseña?</Link>
                         </div>
 
+                        {notice && !message && <p className="form-message form-message--success" role="status">{notice}</p>}
                         {message && <p className="form-message form-message--error">{message}</p>}
 
                         <button className="primary-button primary-button--wide" type="submit" disabled={submitting}>

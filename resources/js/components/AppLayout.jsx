@@ -8,6 +8,7 @@ import {
     Menu,
     Search,
     ShieldCheck,
+    UserRound,
     Users,
     UserRoundCog,
     X,
@@ -36,6 +37,7 @@ const pageMeta = {
     '/users-list': ['Administración', 'Usuarios'],
     '/users-create': ['Administración', 'Usuarios'],
     '/roles-list': ['Administración', 'Roles'],
+    '/perfil': ['Cuenta', 'Mi perfil'],
 };
 
 function storedUser() {
@@ -109,8 +111,10 @@ export default function AppLayout({ children }) {
                         <Bell size={20} />
                         <i>3</i>
                     </button>
-                    <span className="avatar">{initials}</span>
-                    <span className="user-name">{user?.name || 'Usuario local'}</span>
+                    <NavLink className="profile-link" to="/perfil" title="Mi perfil">
+                        <span className="avatar">{initials}</span>
+                        <span className="user-name">{user?.name || 'Usuario local'}</span>
+                    </NavLink>
                     <button className="logout-button" type="button" onClick={logout} disabled={loggingOut} title="Cerrar sesión">
                         <LogOut size={18} />
                         <span>{loggingOut ? 'Cerrando…' : 'Cerrar sesión'}</span>
@@ -135,6 +139,11 @@ export default function AppLayout({ children }) {
                             <span>{label}</span>
                         </NavLink>
                     ))}
+                    <p className="nav-title">Cuenta</p>
+                    <NavLink to="/perfil" onClick={closeMenu} className={({ isActive }) => isActive ? 'nav-link nav-link--active' : 'nav-link'}>
+                        <UserRound size={20} />
+                        <span>Mi perfil</span>
+                    </NavLink>
                 </nav>
                 <div className="system-card">
                     <small>Estado del sistema</small>

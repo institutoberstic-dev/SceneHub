@@ -6,7 +6,10 @@ import AppLayout from './components/AppLayout';
 import DashboardPage from './pages/DashboardPage';
 import EmotionsPage from './pages/EmotionsPage';
 import EmotionDetailPage from './pages/EmotionDetailPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import LoginPage from './pages/LoginPage';
+import ProfilePage from './pages/ProfilePage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import ResultsPage from './pages/ResultsPage';
 import RolesPage from './pages/RolesPage';
 import ScenariosPage from './pages/ScenariosPage';
@@ -30,7 +33,10 @@ function App() {
         <BrowserRouter>
             <Routes>
                 <Route path="/login" element={<LoginPage />} />
+                <Route path="/recuperar-contrasena" element={<ForgotPasswordPage />} />
+                <Route path="/restablecer-contrasena/:token" element={<ResetPasswordPage />} />
                 <Route path="/dashboard" element={<ShellRoute><DashboardPage /></ShellRoute>} />
+                <Route path="/perfil" element={<ShellRoute><ProfilePage /></ShellRoute>} />
                 <Route path="/escenarios" element={<PermissionRoute permission="escenarios.leer"><ShellRoute><ScenariosPage /></ShellRoute></PermissionRoute>} />
                 <Route path="/escenarios/:id" element={<PermissionRoute permission="escenarios.leer"><ShellRoute><ScenarioDetailPage /></ShellRoute></PermissionRoute>} />
                 <Route path="/resultados" element={<PermissionRoute permission="escenarios.leer"><ShellRoute><ResultsPage /></ShellRoute></PermissionRoute>} />

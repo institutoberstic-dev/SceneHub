@@ -4,6 +4,8 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EmocionesController;
 use App\Http\Controllers\EscenariosController;
 use App\Http\Controllers\LoginController;
+use App\Http\Controllers\PasswordResetController;
+use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ResultadosController;
 use App\Http\Controllers\RolesController;
 use App\Http\Controllers\TecnologiasController;
@@ -22,9 +24,19 @@ Route::redirect('/', '/login');
 Route::get('/login', [LoginController::class, 'log_in'])->name('login');
 Route::post('/log-in', [LoginController::class, 'login'])->name('login.submit');
 
+// Recuperación de contraseña (sin sesión). Las vistas las resuelve React.
+Route::get('/recuperar-contrasena', [PasswordResetController::class, 'showRequestForm'])->name('password.request');
+Route::post('/recuperar-contrasena', [PasswordResetController::class, 'sendResetLink'])->middleware('throttle:5,1')->name('password.email');
+Route::get('/restablecer-contrasena/{token}', [PasswordResetController::class, 'showResetForm'])->name('password.reset');
+Route::post('/restablecer-contrasena', [PasswordResetController::class, 'reset'])->middleware('throttle:5,1')->name('password.store');
+
 Route::middleware(['auth', 'active'])->group(function () {
     Route::get('/session-user', [LoginController::class, 'me'])->name('session.user');
     Route::post('/log-out', [LoginController::class, 'logout'])->name('logout');
+
+    // Mi perfil: cambio de contraseña del usuario autenticado.
+    Route::get('/perfil', [ProfileController::class, 'show'])->name('profile.show');
+    Route::put('/perfil/contrasena', [ProfileController::class, 'updatePassword'])->middleware('throttle:6,1')->name('profile.password.update');
 
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard.index');
     Route::get('/tecnologias-data', [TecnologiasController::class, 'index'])->middleware('permission:escenarios.leer')->name('tecnologias.data.web');
