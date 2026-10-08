@@ -6,11 +6,15 @@ use App\Models\Escenario;
 use App\Models\EscenarioContenido;
 use App\Models\Tecnologia;
 use App\Models\User;
+use App\Services\ScenarioFiles;
 use App\Services\SimulationResultsImport;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -49,22 +53,88 @@ class EscenariosController extends Controller
             });
         }
 
+        // «N elementos» de la tarjeta = archivos de la versión vigente, no todas las cargas.
         return response()->json(
-            $query->get()
+            $query->get()->each(fn (Escenario $escenario) => $escenario->setAttribute(
+                'archivos_vigentes',
+                count($this->contentsByVersion($escenario)[$this->versionDirectory($this->currentVersion($escenario))] ?? [])
+            ))
         );
     }
 
     public function detail(Request $request, Escenario $escenario)
     {
-        return response()->json(
-            $escenario->load([
-                'owner:id,name,email',
-                'users:id,name,email',
-                'contenidos.uploadedBy:id,name',
-                'contenidos.modifiedBy:id,name',
-                'tecnologias.categoria',
-            ])
-        );
+        $escenario->load([
+            'owner:id,name,email',
+            'users:id,name,email',
+            'contenidos.uploadedBy:id,name',
+            'contenidos.modifiedBy:id,name',
+            'tecnologias.categoria',
+        ]);
+        $byVersion = $this->contentsByVersion($escenario);
+        $current = $this->versionDirectory($this->currentVersion($escenario));
+
+        return response()->json([
+            ...$escenario->toArray(),
+            // Archivos que contiene la versión vigente (nuevos y heredados de la anterior).
+            'version_vigente' => $current,
+            'contenido_actual' => $byVersion[$current] ?? [],
+            // Instantánea real de cada versión, de la más reciente a la más antigua.
+            'versiones_contenido' => collect($byVersion)->map(fn (array $files, string $version) => ['version' => $version, 'archivos' => $files])
+                ->sortByDesc(fn (array $entry) => (float) $entry['version'])->values(),
+        ]);
+    }
+
+    /** Versión vigente: la del escenario si su carpeta existe; si no, la carpeta más reciente. */
+    private function currentVersion(Escenario $escenario): float
+    {
+        $root = $this->scenarioRoot($escenario);
+        $declared = max(1.0, (float) $escenario->versiones);
+        if (File::isDirectory($root.DIRECTORY_SEPARATOR.$this->versionDirectory($declared)) || ! File::isDirectory($root)) {
+            return $declared;
+        }
+        $latest = collect(File::directories($root))->map(fn (string $directory) => basename($directory))->filter(fn (string $name) => is_numeric($name))->map(fn (string $name) => (float) $name)->max();
+
+        return $latest ?: $declared;
+    }
+
+    /**
+     * Archivos de cada carpeta de versión, enlazados al registro que los cargó: si un archivo
+     * viene heredado de una versión anterior, se muestra el registro de esa carga. Así una
+     * versión lista exactamente lo que contiene su carpeta (los archivos reemplazados no aparecen).
+     *
+     * @return array<string, array<int, array<string, mixed>>> versión («1.1») => archivos
+     */
+    private function contentsByVersion(Escenario $escenario): array
+    {
+        $root = $this->scenarioRoot($escenario);
+        if (! File::isDirectory($root)) {
+            return [];
+        }
+        $rows = $escenario->relationLoaded('contenidos') ? $escenario->contenidos : $escenario->contenidos()->get();
+        $rowsByName = $rows->groupBy(fn (EscenarioContenido $row) => Str::lower(basename(str_replace('\\', '/', $row->ruta))));
+
+        $result = [];
+        $directories = collect(File::directories($root))
+            ->filter(fn (string $directory) => is_numeric(basename($directory)))
+            ->sortBy(fn (string $directory) => (float) basename($directory));
+        foreach ($directories as $directory) {
+            $version = (float) basename($directory);
+            $files = [];
+            foreach (File::files($directory) as $file) {
+                $row = $rowsByName->get(Str::lower($file->getFilename()), collect())
+                    ->filter(fn (EscenarioContenido $row) => (float) $row->version <= $version + 1e-9)
+                    ->sortBy([fn ($a, $b) => (float) $a->version <=> (float) $b->version, fn ($a, $b) => $a->id <=> $b->id])
+                    ->last();
+                $files[] = $row
+                    ? $row->toArray()
+                    : ['id' => null, 'nombre' => $file->getFilename(), 'nombre_original' => null, 'tipo' => 'documento', 'version' => $this->versionDirectory($version), 'tamano' => $file->getSize(), 'updated_at' => null];
+            }
+            usort($files, fn (array $a, array $b) => strnatcasecmp($a['nombre'], $b['nombre']));
+            $result[$this->versionDirectory($version)] = $files;
+        }
+
+        return $result;
     }
 
     public function store(Request $request)
@@ -74,29 +144,39 @@ class EscenariosController extends Controller
         $validated = $request->validate([
             'nombre' => ['required', 'string', 'max:255', 'unique:esceanarios,nombre'],
             'descripcion' => ['required', 'string', 'max:2000'],
+            'numero' => ['nullable', 'integer', 'min:1', 'max:'.ScenarioFiles::MAX_SCENARIO_NUMBER, Rule::unique('esceanarios', 'numero')],
             'archivo' => ['required_without:archivos', ...$this->scenarioFileRules()],
             'archivos' => ['required_without:archivo', 'array', 'min:1', 'max:10'],
             'archivos.*' => $this->scenarioFileRules(),
+            ...$this->dateRules(),
             ...$this->technologyRules(),
-        ], $this->technologyMessages());
+        ], $this->technologyMessages() + $this->numberMessages());
 
         $technologyIds = $this->technologyIds($validated['tecnologias'] ?? []);
-        $files = $this->uploadedScenarioFiles($request);
-        $imports = $this->readImports($request);
+        $files = $this->uploadedScenarioFilesByField($request);
+        $imports = $this->readImports($files);
+        // Sin número indicado: el que trae el nombre del libro de resultados si está libre, o el siguiente disponible.
+        $validated['numero'] = (int) ($validated['numero'] ?? ScenarioFiles::nextScenarioNumber($this->scenarioNumberHint($files, $imports)));
+        $items = $this->planFiles($files, $imports, $validated['numero'], dates: $this->uploadedDates($request, $files));
 
-        return $this->createScenario($validated, $files, $imports, $technologyIds);
+        try {
+            return $this->createScenario($validated, $items, $technologyIds);
+        } catch (UniqueConstraintViolationException) {
+            throw ValidationException::withMessages(['numero' => "El escenario número {$validated['numero']} ya existe; elige otro número."]);
+        }
     }
 
-    private function createScenario(array $validated, array $files, array $imports, array $technologyIds = [])
+    private function createScenario(array $validated, array $items, array $technologyIds = [])
     {
-        $escenario = $this->withScenarioFiles(function () use ($validated, $files, $imports, $technologyIds) {
+        $escenario = $this->withScenarioFiles(function () use ($validated, $items, $technologyIds) {
             $user = Auth::user();
             $escenario = Escenario::create([
+                'numero' => $validated['numero'],
                 'nombre' => $validated['nombre'],
                 'owner_id' => $user->id,
                 'estado' => 'Activo',
                 'descripcion' => $validated['descripcion'],
-                'versiones' => $files ? 1 : 0,
+                'versiones' => $items ? 1 : 0,
             ]);
             $escenario->update([
                 'storage_directory' => $this->scenarioDirectory($escenario),
@@ -110,25 +190,15 @@ class EscenariosController extends Controller
 
             $this->rollbackPaths[] = $this->scenarioRoot($escenario);
             File::ensureDirectoryExists($this->scenarioRoot($escenario));
-            foreach ($files as $index => $file) {
-                $stored = $this->storeScenarioFile($escenario, $file, $index === 0 ? 1.0 : null);
-                $import = $imports[$index] ?? null;
-
-                EscenarioContenido::create([
-                    'escenario_id' => $escenario->id,
-                    'uploaded_by' => $user->id,
-                    'modified_by' => $user->id,
-                    'nombre' => $file->getClientOriginalName(),
-                    'ruta' => $stored['path'],
-                    'tipo' => $import ? 'datos' : 'documento',
-                    'mime_type' => $file->getClientMimeType(),
-                    'tamano' => $file->getSize() ?: 0,
-                    'version' => $stored['version'],
-                    'estado' => 'Disponible',
-                ]);
-
-                if ($import) {
-                    $this->persistSimulation($escenario->id, $stored['path'], $import);
+            $first = true;
+            foreach ($items as $item) {
+                $stored = $this->storeScenarioFile($escenario, $item['file'], $item['nombre'], $first ? 1.0 : null, $item['reemplaza_a']);
+                $first = false;
+                if ($stored['stored']) {
+                    $this->createContent($escenario->id, $user->id, $item, $stored);
+                }
+                if ($stored['stored'] && $item['import']) {
+                    $this->persistSimulation($escenario->id, $stored['path'], $item['import']);
                 }
                 if ($stored['version'] !== (float) $escenario->versiones) {
                     $escenario->update(['versiones' => $stored['version']]);
@@ -138,12 +208,128 @@ class EscenariosController extends Controller
             return $escenario;
         });
 
-        $imported = count(array_filter($imports));
-
         return response()->json([
-            'message' => $this->uploadSummary(count($files), $imported, 'Escenario creado exitosamente.'),
+            'message' => $this->uploadSummary($items, 'Escenario '.$escenario->numero.' creado exitosamente.'),
+            'archivos' => $this->filesSummary($items),
             'data' => $escenario->load(['owner:id,name,email', 'contenidos', 'tecnologias.categoria']),
         ], 201);
+    }
+
+    /**
+     * Reconoce los archivos antes de guardarlos (arrastrar y soltar en «Nuevo escenario» y
+     * «Agregar archivos»): qué es cada uno, si su estructura es válida, el número que trae en
+     * el nombre y lo que ya existe en el escenario. No guarda nada. La vista previa calcula
+     * con esto los nombres finales al marcar o desmarcar archivos; al guardar, el servidor
+     * vuelve a validar todo.
+     */
+    public function analyzeFiles(Request $request)
+    {
+        $user = $request->user();
+        $request->validate([
+            'archivos' => ['required', 'array', 'min:1', 'max:10'],
+            'escenario_id' => ['nullable', 'integer', Rule::exists('esceanarios', 'id')],
+        ], [
+            'archivos.required' => 'Selecciona al menos un archivo.',
+            'archivos.max' => 'Puedes cargar hasta 10 archivos a la vez.',
+        ]);
+
+        $escenario = $request->filled('escenario_id') ? Escenario::query()->findOrFail($request->integer('escenario_id')) : null;
+        if ($escenario) {
+            abort_unless($escenario->owner_id === $user->id && $user->can('escenarios.versionar'), 403, 'Solo el owner del escenario puede agregarle archivos.');
+        } else {
+            abort_if($user->hasRole('admin'), 403, 'El administrador supervisa los escenarios, pero no crea contenido operativo.');
+            abort_unless($user->can('escenarios.crear'), 403, 'No tienes permiso para crear escenarios.');
+        }
+
+        $naming = new ScenarioFiles;
+        $root = $escenario ? $this->scenarioRoot($escenario) : null;
+        $reports = $naming->reportsIn($naming->existingFiles($root));
+        $rows = [];
+
+        foreach ((array) $request->file('archivos', []) as $index => $file) {
+            $original = $file instanceof UploadedFile ? basename($file->getClientOriginalName()) : 'archivo '.($index + 1);
+            $row = [
+                'indice' => $index,
+                'campo' => 'archivos.'.$index,
+                'nombre_original' => $original,
+                'extension' => strtolower(pathinfo($original, PATHINFO_EXTENSION)),
+                'tamano' => $file instanceof UploadedFile ? ($file->getSize() ?: 0) : 0,
+                'sha256' => null,
+                'tipo' => null,
+                'valido' => false,
+                'errores' => [],
+                'resultados' => null,
+                'numero_escenario_en_nombre' => null,
+                'numero_informe' => null,
+                'origen_numero' => null,
+            ];
+            if (! $file instanceof UploadedFile) {
+                $row['errores'][] = "«{$original}»: no fue posible leer el archivo.";
+                $rows[] = $row;
+
+                continue;
+            }
+
+            $validator = Validator::make(['archivo' => $file], ['archivo' => $this->scenarioFileRules()], [
+                'archivo.mimes' => 'solo se admiten archivos Word (.doc, .docx), PDF o Excel (.xlsx, .xls).',
+                'archivo.extensions' => 'solo se admiten archivos Word (.doc, .docx), PDF o Excel (.xlsx, .xls).',
+                'archivo.max' => 'supera el máximo de 50 MB.',
+            ]);
+            if ($validator->fails()) {
+                $row['errores'] = array_map(fn (string $message) => "«{$original}»: {$message}", array_values(array_unique($validator->errors()->all())));
+                $rows[] = $row;
+
+                continue;
+            }
+
+            $row['sha256'] = $naming->hash($file->getRealPath());
+            try {
+                $import = $this->readImport($file, $row['campo']);
+            } catch (ValidationException $exception) {
+                // Tiene las hojas de un libro de resultados, pero no cumple el formato.
+                $row['tipo'] = ScenarioFiles::RESULTS;
+                $row['errores'] = collect($exception->errors())->flatten()->values()->all();
+                $rows[] = $row;
+
+                continue;
+            }
+
+            $row['tipo'] = ScenarioFiles::kind($file, $import);
+            $row['valido'] = true;
+            if ($import) {
+                $row['resultados'] = [
+                    'formato' => $import['formato'],
+                    'registros' => $import['registros'],
+                    'columnas' => $import['columnas'],
+                ];
+                $row['numero_escenario_en_nombre'] = ScenarioFiles::scenarioNumberFromName($original);
+            } elseif ($row['tipo'] === ScenarioFiles::REPORT) {
+                [$row['numero_informe'], $row['origen_numero']] = $naming->fixedReportNumber($file, $reports, $escenario?->id);
+            } elseif ($reserved = $naming->reservedNameError($original)) {
+                $row['valido'] = false;
+                $row['errores'][] = $reserved;
+            }
+            $rows[] = $row;
+        }
+
+        $scenarioFile = collect($rows)->first(fn (array $row) => $row['valido'] && $row['tipo'] === ScenarioFiles::RESULTS);
+        $suggested = $escenario
+            ? $this->ensureScenarioNumber($escenario)
+            : ScenarioFiles::nextScenarioNumber($scenarioFile['numero_escenario_en_nombre'] ?? null);
+
+        return response()->json([
+            'escenario' => [
+                'id' => $escenario?->id,
+                'nombre' => $escenario?->nombre,
+                'numero' => $escenario?->numero,
+                'numero_sugerido' => $suggested,
+                'nombre_sugerido' => 'Escenario '.$suggested,
+                'numeros_ocupados' => ScenarioFiles::usedScenarioNumbers(),
+            ],
+            'archivo_escenario' => $scenarioFile['indice'] ?? null,
+            'existentes' => $naming->existingSummary($root, $escenario?->id),
+            'archivos' => $rows,
+        ]);
     }
 
     public function show(Escenario $escenario)
@@ -217,44 +403,37 @@ class EscenariosController extends Controller
             'archivo' => ['required_without:archivos', ...$this->scenarioFileRules()],
             'archivos' => ['required_without:archivo', 'array', 'min:1', 'max:10'],
             'archivos.*' => $this->scenarioFileRules(),
+            ...$this->dateRules(),
         ]);
 
-        $files = $this->uploadedScenarioFiles($request);
-        $imports = $this->readImports($request);
-        $result = $this->withScenarioFiles(function () use ($validated, $escenario, $user, $files, $imports) {
+        $files = $this->uploadedScenarioFilesByField($request);
+        $imports = $this->readImports($files);
+        $scenarioNumber = $this->ensureScenarioNumber($escenario);
+        $customName = $validated['nombre'] ?? null;
+        $dates = $this->uploadedDates($request, $files);
+        $result = $this->withScenarioFiles(function () use ($escenario, $user, $files, $imports, $scenarioNumber, $customName, $dates) {
             $lockedScenario = Escenario::query()->lockForUpdate()->findOrFail($escenario->id);
+            // Los nombres se calculan con el escenario bloqueado: dos cargas simultáneas no toman el mismo número de informe.
+            $items = $this->planFiles($files, $imports, $scenarioNumber, $lockedScenario, $customName, $dates);
             $contents = [];
             $storedCount = 0;
-            $importedCount = 0;
             $newVersion = false;
 
-            foreach ($files as $index => $file) {
-                $import = $imports[$index] ?? null;
-                $stored = $this->storeScenarioFile($lockedScenario, $file);
+            foreach ($items as $item) {
+                if ($item['accion'] === 'omitido') {
+                    continue; // Informe igual o más antiguo que el guardado: no se carga.
+                }
+                $stored = $this->storeScenarioFile($lockedScenario, $item['file'], $item['nombre'], null, $item['reemplaza_a']);
                 $content = $stored['stored']
-                    ? EscenarioContenido::create([
-                        'escenario_id' => $escenario->id,
-                        'uploaded_by' => $user?->id,
-                        'modified_by' => $user?->id,
-                        'nombre' => count($files) === 1 && ($validated['nombre'] ?? null)
-                            ? $validated['nombre']
-                            : $file->getClientOriginalName(),
-                        'ruta' => $stored['path'],
-                        'tipo' => $import ? 'datos' : 'documento',
-                        'mime_type' => $file->getClientMimeType(),
-                        'tamano' => $file->getSize() ?: 0,
-                        'version' => $stored['version'],
-                        'estado' => 'Disponible',
-                    ])
+                    ? $this->createContent($escenario->id, $user?->id, $item, $stored)
                     : EscenarioContenido::query()
                         ->where('escenario_id', $escenario->id)
                         ->where('ruta', $stored['path'])
                         ->latest()
                         ->first();
 
-                if ($import && $stored['stored']) {
-                    $this->persistSimulation($escenario->id, $stored['path'], $import);
-                    $importedCount++;
+                if ($item['import'] && $stored['stored']) {
+                    $this->persistSimulation($escenario->id, $stored['path'], $item['import']);
                 }
 
                 if ($stored['stored']) {
@@ -274,9 +453,10 @@ class EscenariosController extends Controller
                 'contents' => $contents,
                 'new_version' => $newVersion,
                 'stored_count' => $storedCount,
-                'imported_count' => $importedCount,
+                'items' => $items,
             ];
         });
+        $items = $result['items'];
 
         $loadedContents = collect($result['contents'])
             ->map->load(['uploadedBy:id,name', 'modifiedBy:id,name'])
@@ -284,10 +464,11 @@ class EscenariosController extends Controller
 
         return response()->json([
             'message' => $result['stored_count'] === 0
-                ? 'Los archivos no presentan cambios; no se almacenaron copias duplicadas.'
-                : $this->uploadSummary($result['stored_count'], $result['imported_count'], 'Archivos almacenados exitosamente.'),
+                ? 'Los archivos no presentan cambios; no se almacenaron copias duplicadas.'.$this->skippedNote($items)
+                : $this->uploadSummary($items, 'Archivos almacenados exitosamente.'),
             'stored' => $result['stored_count'] > 0,
             'new_version' => $result['new_version'],
+            'archivos' => $this->filesSummary($items),
             'data' => count($files) === 1 ? $loadedContents->first() : $loadedContents,
         ], $result['stored_count'] > 0 ? 201 : 200);
     }
@@ -320,6 +501,7 @@ class EscenariosController extends Controller
             'descripcion' => ['required', 'string', 'max:2000'],
             'estado' => ['required', 'in:Activo,Inactivo'],
             'archivo' => ['nullable', ...$this->scenarioFileRules()],
+            ...$this->dateRules(),
             ...$this->technologyRules(),
         ], $this->technologyMessages());
 
@@ -334,40 +516,32 @@ class EscenariosController extends Controller
             'Tu rol permite editar el escenario, pero no reemplazar archivos ni crear versiones.'
         );
 
-        $import = $this->readImport($request->file('archivo'), 'archivo');
+        $files = $request->hasFile('archivo') ? ['archivo' => $request->file('archivo')] : [];
+        $imports = $this->readImports($files);
+        $scenarioNumber = $files ? $this->ensureScenarioNumber($escenario) : null;
+        $dates = $this->uploadedDates($request, $files);
+        $items = [];
 
-        $newVersion = $this->withScenarioFiles(function () use ($request, $validated, $escenario, $user, $import, $syncTechnologies, $technologyIds) {
+        $newVersion = $this->withScenarioFiles(function () use ($validated, $escenario, $user, $files, $imports, $scenarioNumber, $dates, &$items, $syncTechnologies, $technologyIds) {
             $lockedScenario = Escenario::query()->lockForUpdate()->findOrFail($escenario->id);
+            $items = $files ? $this->planFiles($files, $imports, $scenarioNumber, $lockedScenario, null, $dates) : [];
+            $item = ($items['archivo']['accion'] ?? null) === 'omitido' ? null : ($items['archivo'] ?? null);
             $scenarioData = [
                 'nombre' => $validated['nombre'],
                 'descripcion' => $validated['descripcion'],
                 'estado' => $validated['estado'],
             ];
 
-            if ($request->hasFile('archivo')) {
-                $file = $request->file('archivo');
-                $stored = $this->storeScenarioFile($lockedScenario, $file);
+            if ($item) {
+                $stored = $this->storeScenarioFile($lockedScenario, $item['file'], $item['nombre'], null, $item['reemplaza_a']);
 
                 if ($stored['stored']) {
-                    EscenarioContenido::create([
-                        'escenario_id' => $escenario->id,
-                        'uploaded_by' => $user->id,
-                        'modified_by' => $user->id,
-                        'nombre' => $file->getClientOriginalName(),
-                        'ruta' => $stored['path'],
-                        'tipo' => $import ? 'datos' : 'documento',
-                        'mime_type' => $file->getClientMimeType(),
-                        'tamano' => $file->getSize() ?: 0,
-                        'version' => $stored['version'],
-                        'estado' => 'Disponible',
-                    ]);
-
+                    $this->createContent($escenario->id, $user->id, $item, $stored);
                     $scenarioData['versiones'] = $stored['version'];
                 }
-            }
-
-            if (isset($stored) && $stored['stored'] && $import) {
-                $this->persistSimulation($escenario->id, $stored['path'], $import);
+                if ($stored['stored'] && $item['import']) {
+                    $this->persistSimulation($escenario->id, $stored['path'], $item['import']);
+                }
             }
             $lockedScenario->update($scenarioData);
             if ($syncTechnologies) {
@@ -377,14 +551,19 @@ class EscenariosController extends Controller
             return $stored ?? null;
         });
 
+        $item = $items['archivo'] ?? null;
+
         return response()->json([
-            'message' => $request->hasFile('archivo')
+            'message' => $item && $item['accion'] === 'omitido'
+                ? 'Escenario actualizado; el informe no se cargó.'.$this->skippedNote($items)
+                : ($item
                 ? (! $newVersion['stored']
                     ? 'Escenario actualizado; el archivo no cambió y no se almacenó nuevamente.'
                     : ($newVersion['new_version']
                         ? 'Escenario actualizado y nueva versión registrada exitosamente.'
-                        : 'Escenario actualizado; el archivo fue agregado a la versión actual.'))
-                : 'Escenario actualizado exitosamente.',
+                        : 'Escenario actualizado; el archivo fue agregado a la versión actual.')).$this->renameNote($items)
+                : 'Escenario actualizado exitosamente.'),
+            'archivos' => $this->filesSummary($items),
             'data' => $escenario->fresh()->load(['owner:id,name,email', 'contenidos.uploadedBy:id,name', 'contenidos.modifiedBy:id,name', 'tecnologias.categoria']),
         ]);
     }
@@ -444,17 +623,20 @@ class EscenariosController extends Controller
     /**
      * Lee todos los archivos de la solicitud y reúne los errores de formato de
      * cada libro de resultados antes de responder, para corregirlos de una vez.
+     *
+     * @param  array<string, UploadedFile>  $files  campo => archivo
+     * @return array<string, array|null> campo => datos importables (null si no es un libro de resultados)
      */
-    private function readImports(Request $request): array
+    private function readImports(array $files): array
     {
         $imports = [];
         $errors = [];
-        foreach ($this->uploadedScenarioFilesByField($request) as $field => $file) {
+        foreach ($files as $field => $file) {
             try {
-                $imports[] = $this->readImport($file, $field);
+                $imports[$field] = $this->readImport($file, $field);
             } catch (ValidationException $exception) {
                 $errors = array_merge_recursive($errors, $exception->errors());
-                $imports[] = null;
+                $imports[$field] = null;
             }
         }
         if ($errors) {
@@ -511,13 +693,9 @@ class EscenariosController extends Controller
 
     private function scenarioFileRules(): array
     {
-        return ['file', 'max:51200', 'mimes:xlsx,xls,doc,docx', 'extensions:xlsx,xls,doc,docx'];
-    }
+        $extensions = implode(',', ScenarioFiles::ALLOWED_EXTENSIONS);
 
-    /** @return array<int, \Illuminate\Http\UploadedFile> */
-    private function uploadedScenarioFiles(Request $request): array
-    {
-        return array_values($this->uploadedScenarioFilesByField($request));
+        return ['file', 'max:51200', 'mimes:'.$extensions, 'extensions:'.$extensions];
     }
 
     /** @return array<string, \Illuminate\Http\UploadedFile> campo del formulario => archivo */
@@ -536,18 +714,171 @@ class EscenariosController extends Controller
         return $files;
     }
 
-    private function uploadSummary(int $stored, int $imported, string $prefix): string
+    /**
+     * Resume lo almacenado (los archivos sin cambios no cuentan) y los nombres asignados.
+     *
+     * @param  array<string, array<string, mixed>>  $items
+     */
+    private function uploadSummary(array $items, string $prefix): string
     {
-        $documents = $stored - $imported;
+        $stored = collect($items)->whereNotIn('accion', ['sin_cambios', 'omitido']);
+        $count = fn (string $kind) => $stored->where('tipo', $kind)->count();
         $parts = [];
-        if ($imported > 0) {
+        if ($imported = $count(ScenarioFiles::RESULTS)) {
             $parts[] = $imported.' '.($imported === 1 ? 'documento fue importado a resultados' : 'documentos fueron importados a resultados');
         }
-        if ($documents > 0) {
+        if ($reports = $count(ScenarioFiles::REPORT)) {
+            $parts[] = $reports.' '.($reports === 1 ? 'informe quedó disponible' : 'informes quedaron disponibles');
+        }
+        if ($documents = $count(ScenarioFiles::DOCUMENT)) {
             $parts[] = $documents.' '.($documents === 1 ? 'archivo quedó disponible para descarga' : 'archivos quedaron disponibles para descarga');
         }
 
-        return $parts ? $prefix.' '.ucfirst(implode(' y ', $parts)).'.' : $prefix;
+        $last = array_pop($parts);
+        $text = $parts ? implode(', ', $parts).' y '.$last : $last;
+
+        return ($text ? $prefix.' '.ucfirst($text).'.' : $prefix).$this->renameNote($items).$this->skippedNote($items);
+    }
+
+    /** « No se cargó «x»: …» para los informes iguales o más antiguos que los guardados. */
+    private function skippedNote(array $items): string
+    {
+        return collect($items)
+            ->where('accion', 'omitido')
+            ->map(fn (array $item) => ' «'.$item['nombre_original'].'»: '.lcfirst(end($item['advertencias'])))
+            ->implode('');
+    }
+
+    /**
+     * Fechas de los archivos (File.lastModified del navegador, en ms): `fechas[i]` para
+     * `archivos[i]` y `fecha_archivo` para `archivo`.
+     *
+     * @return array<string, int|null> campo => segundos
+     */
+    private function uploadedDates(Request $request, array $files): array
+    {
+        $dates = [];
+        foreach (array_keys($files) as $field) {
+            $value = $field === 'archivo' ? $request->input('fecha_archivo') : $request->input('fechas.'.substr($field, strlen('archivos.')));
+            $dates[$field] = ScenarioFiles::normalizeDate($value);
+        }
+
+        return $dates;
+    }
+
+    private function dateRules(): array
+    {
+        return [
+            'fechas' => ['nullable', 'array', 'max:10'],
+            'fechas.*' => ['nullable', 'integer', 'min:0'],
+            'fecha_archivo' => ['nullable', 'integer', 'min:0'],
+        ];
+    }
+
+    /** « Se guardó «x» como «y».» para los archivos cuyo nombre se normalizó. */
+    private function renameNote(array $items): string
+    {
+        $renamed = collect($items)
+            ->filter(fn (array $item) => ! in_array($item['accion'], ['sin_cambios', 'omitido'], true) && $item['nombre'] !== $item['nombre_original'])
+            ->map(fn (array $item) => '«'.$item['nombre_original'].'» como «'.$item['nombre'].'»'.($item['accion'] === 'reemplaza' ? ' (reemplaza la versión anterior)' : ''));
+
+        return $renamed->isEmpty() ? '' : ' Se guardó '.$renamed->implode('; ').'.';
+    }
+
+    /** @return array<int, array<string, mixed>> nombre original => nombre guardado, por archivo */
+    private function filesSummary(array $items): array
+    {
+        return collect($items)->map(fn (array $item) => [
+            'campo' => $item['campo'],
+            'nombre_original' => $item['nombre_original'],
+            'nombre' => $item['nombre'],
+            'tipo' => $item['tipo'],
+            'numero' => $item['numero'],
+            'accion' => $item['accion'],
+            'advertencias' => $item['advertencias'],
+        ])->values()->all();
+    }
+
+    /**
+     * Asigna el nombre canónico de cada archivo; responde 422 con todos los conflictos juntos.
+     *
+     * @param  array<string, UploadedFile>  $files
+     * @param  array<string, array|null>  $imports
+     * @return array<string, array<string, mixed>>
+     */
+    private function planFiles(array $files, array $imports, int $scenarioNumber, ?Escenario $escenario = null, ?string $customName = null, array $dates = []): array
+    {
+        $kinds = [];
+        foreach ($files as $field => $file) {
+            $kinds[$field] = ScenarioFiles::kind($file, $imports[$field] ?? null);
+        }
+        $plan = (new ScenarioFiles)->plan(
+            $files,
+            $kinds,
+            $scenarioNumber,
+            $escenario ? $this->scenarioRoot($escenario) : null,
+            $escenario?->id,
+            $customName,
+            $dates
+        );
+        if ($plan['errors']) {
+            throw ValidationException::withMessages($plan['errors']);
+        }
+
+        return collect($plan['items'])->map(fn (array $item, string $field) => $item + ['import' => $imports[$field] ?? null])->all();
+    }
+
+    /** @param array{path: string, version: float} $stored */
+    private function createContent(int $scenarioId, ?int $userId, array $item, array $stored): EscenarioContenido
+    {
+        return EscenarioContenido::create([
+            'escenario_id' => $scenarioId,
+            'uploaded_by' => $userId,
+            'modified_by' => $userId,
+            'nombre' => $item['etiqueta'],
+            'nombre_original' => $item['nombre_original'],
+            'ruta' => $stored['path'],
+            'tipo' => ScenarioFiles::CONTENT_TYPES[$item['tipo']],
+            'mime_type' => $item['file']->getClientMimeType(),
+            'tamano' => $item['file']->getSize() ?: 0,
+            'fecha_archivo' => $item['fecha'] ? date('Y-m-d H:i:s', $item['fecha']) : null,
+            'version' => $stored['version'],
+            'estado' => 'Disponible',
+        ]);
+    }
+
+    /** Número sugerido por el nombre del libro de resultados («resultados escenario 2.xlsx» ⇒ 2). */
+    private function scenarioNumberHint(array $files, array $imports): ?int
+    {
+        foreach ($files as $field => $file) {
+            if (($imports[$field] ?? null) !== null) {
+                return ScenarioFiles::scenarioNumberFromName($file->getClientOriginalName());
+            }
+        }
+
+        return null;
+    }
+
+    /** Escenarios creados antes del número: se les asigna uno al primer uso (la migración ya lo hace). */
+    private function ensureScenarioNumber(Escenario $escenario): int
+    {
+        if (! $escenario->numero) {
+            $escenario->forceFill([
+                'numero' => ScenarioFiles::nextScenarioNumber(ScenarioFiles::scenarioNumberFromName($escenario->nombre, false)),
+            ])->save();
+        }
+
+        return (int) $escenario->numero;
+    }
+
+    private function numberMessages(): array
+    {
+        return [
+            'numero.integer' => 'El número del escenario debe ser un número entero.',
+            'numero.min' => 'El número del escenario debe ser mayor que cero.',
+            'numero.max' => 'El número del escenario no puede superar :max.',
+            'numero.unique' => 'Ya existe un escenario con el número :input.',
+        ];
     }
 
     private function persistSimulation(int $scenarioId, string $path, ?array $import): void
@@ -649,15 +980,20 @@ class EscenariosController extends Controller
         );
     }
 
-    /** @return array{path: string, version: float, new_version: bool, stored: bool} */
-    private function storeScenarioFile(Escenario $escenario, object $archivo, ?float $initialVersion = null): array
+    /**
+     * @param  array<int, string>  $supersedes  archivos de la versión actual que la nueva versión deja de incluir
+     *                                          (el libro de resultados con su nombre anterior)
+     * @return array{path: string, version: float, new_version: bool, stored: bool}
+     */
+    private function storeScenarioFile(Escenario $escenario, object $archivo, string $fileName, ?float $initialVersion = null, array $supersedes = []): array
     {
         // Compare with the latest file only: restoring an older result is a new variation.
+        // $fileName es el nombre canónico (ScenarioFiles), no el nombre con que se subió.
         $scenarioRoot = $this->scenarioRoot($escenario);
         $currentVersion = $initialVersion ?? (float) $escenario->versiones;
         $currentVersion = $currentVersion < 1 ? 1.0 : $currentVersion;
         $currentDirectory = $scenarioRoot.DIRECTORY_SEPARATOR.$this->versionDirectory($currentVersion);
-        $fileName = basename($archivo->getClientOriginalName());
+        $fileName = basename($fileName);
         $currentFile = $currentDirectory.DIRECTORY_SEPARATOR.$fileName;
         $newVersion = false;
         $latestExistingFile = $this->latestVersionedFile($scenarioRoot, $fileName);
@@ -668,7 +1004,7 @@ class EscenariosController extends Controller
                 'path' => 'public/'.str_replace('\\', '/', $this->relativeScenarioPath(
                     $escenario,
                     $latestExistingFile['version'],
-                    $fileName
+                    $latestExistingFile['name']
                 )),
                 'version' => $currentVersion,
                 'new_version' => false,
@@ -676,8 +1012,13 @@ class EscenariosController extends Controller
             ];
         }
 
-        if ($latestExistingFile !== null
-            && hash_file('sha256', $latestExistingFile['path']) !== hash_file('sha256', $archivo->getRealPath())) {
+        $supersedes = array_values(array_filter(
+            array_map('basename', $supersedes),
+            fn (string $name) => File::isFile($currentDirectory.DIRECTORY_SEPARATOR.$name)
+        ));
+
+        // Contenido distinto, o un archivo anterior que este reemplaza ⇒ nueva versión acumulativa.
+        if ($latestExistingFile !== null || $supersedes !== []) {
             $nextVersion = $this->nextVersionValue($currentVersion);
             $nextDirectory = $scenarioRoot.DIRECTORY_SEPARATOR.$this->versionDirectory($nextVersion);
 
@@ -689,6 +1030,10 @@ class EscenariosController extends Controller
             File::ensureDirectoryExists($scenarioRoot);
             if (! File::copyDirectory($currentDirectory, $nextDirectory)) {
                 throw new \RuntimeException('No fue posible copiar la versión actual del escenario.');
+            }
+
+            foreach ($supersedes as $name) {
+                File::delete($nextDirectory.DIRECTORY_SEPARATOR.$name);
             }
 
             $currentVersion = $nextVersion;
@@ -713,7 +1058,12 @@ class EscenariosController extends Controller
         ];
     }
 
-    /** @return array{path: string, version: float}|null */
+    /**
+     * Última copia del archivo; la comparación ignora mayúsculas para que Linux (Hostinger)
+     * y Windows (XAMPP) reconozcan el mismo archivo.
+     *
+     * @return array{path: string, version: float, name: string}|null
+     */
     private function latestVersionedFile(string $scenarioRoot, string $fileName): ?array
     {
         if (! File::isDirectory($scenarioRoot)) {
@@ -724,13 +1074,24 @@ class EscenariosController extends Controller
             ->filter(fn (string $directory) => is_numeric(basename($directory)))
             ->sortByDesc(fn (string $directory) => (float) basename($directory));
 
+        $wanted = Str::lower($fileName);
         foreach ($versionDirectories as $directory) {
-            $candidate = $directory.DIRECTORY_SEPARATOR.$fileName;
+            $match = null;
+            foreach (File::files($directory) as $file) {
+                if ($file->getFilename() === $fileName) {
+                    $match = $file;
+                    break;
+                }
+                if ($match === null && Str::lower($file->getFilename()) === $wanted) {
+                    $match = $file;
+                }
+            }
 
-            if (File::isFile($candidate)) {
+            if ($match !== null) {
                 return [
-                    'path' => $candidate,
+                    'path' => $match->getPathname(),
                     'version' => (float) basename($directory),
+                    'name' => $match->getFilename(),
                 ];
             }
         }

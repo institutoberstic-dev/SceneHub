@@ -14,10 +14,12 @@ class EscenarioContenido extends Model
         'uploaded_by',
         'modified_by',
         'nombre',
+        'nombre_original',
         'ruta',
         'tipo',
         'mime_type',
         'tamano',
+        'fecha_archivo',
         'version',
         'estado',
     ];
@@ -26,6 +28,7 @@ class EscenarioContenido extends Model
     {
         return [
             'tamano' => 'integer',
+            'fecha_archivo' => 'datetime',
             'version' => 'decimal:1',
         ];
     }

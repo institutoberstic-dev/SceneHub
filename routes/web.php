@@ -55,6 +55,7 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::get('/escenarios', [EscenariosController::class, 'index'])->middleware('permission:escenarios.leer')->name('escenarios.index');
     Route::get('/escenarios/{escenario}', [EscenariosController::class, 'show'])->middleware(['permission:escenarios.leer', 'scenario.access'])->name('escenarios.show');
     Route::post('/escenarios-store', [EscenariosController::class, 'store'])->middleware('permission:escenarios.crear')->name('escenarios.store');
+    Route::post('/escenarios-analizar', [EscenariosController::class, 'analyzeFiles'])->middleware('permission:escenarios.crear|escenarios.versionar')->name('escenarios.files.analyze');
     Route::put('/escenarios/{escenario}', [EscenariosController::class, 'update'])->middleware(['permission:escenarios.actualizar', 'scenario.access:owner,supervisor'])->name('escenarios.update');
     Route::post('/escenarios/{escenario}/contenidos', [EscenariosController::class, 'uploadContent'])->middleware(['permission:escenarios.versionar', 'scenario.access:owner'])->name('escenarios.contents.store');
     Route::post('/escenarios/{escenario}/members', [EscenariosController::class, 'invite'])->middleware(['permission:escenarios.invitar', 'scenario.access:owner'])->name('escenarios.members.store');

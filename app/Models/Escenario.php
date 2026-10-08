@@ -14,6 +14,7 @@ class Escenario extends Model
     protected $primaryKey = 'id';
 
     protected $fillable = [
+        'numero',
         'nombre',
         'owner_id',
         'estado',
@@ -23,6 +24,14 @@ class Escenario extends Model
     ];
 
     public $timestamps = true;
+
+    protected function casts(): array
+    {
+        return [
+            // Define el nombre canónico del libro de datos: «resultados escenario {numero}.xlsx».
+            'numero' => 'integer',
+        ];
+    }
 
     public function owner(): BelongsTo
     {

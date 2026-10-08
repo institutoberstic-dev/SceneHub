@@ -118,15 +118,25 @@ class ScenarioSolarImportTest extends TestCase
             ->assertJsonPath('archivos.0.muestreos.1.0.energia_almacenada_original', 500000)
             ->assertJsonPath('archivos.0.muestreos.1.0.estado_carga_pct', null)
             ->assertJsonPath('archivos.0.advertencias', []);
-        $this->getJson("/escenarios-data/$id/resultados")->assertOk()->assertJsonPath('archivos.0.nombre', SimulationResultsImport::OFFICIAL_FILENAME);
+        // El libro se guarda con el nombre canónico del escenario, no con el nombre subido.
+        $this->getJson("/escenarios-data/$id/resultados")->assertOk()->assertJsonPath('archivos.0.nombre', 'resultados escenario 1.xlsx');
         $this->postJson("/escenarios/$id/contenidos", ['archivo' => $file])->assertOk();
         $this->assertDatabaseCount('resultados_simulacion', 4);
         $this->putJson("/escenarios/$id", ['nombre' => 'Solar', 'descripcion' => 'Actualizado', 'estado' => 'Activo', 'archivo' => $file])->assertOk();
         $this->assertDatabaseCount('resultados_simulacion', 4);
+        // Con otro nombre sigue siendo el mismo libro de resultados: no se duplica.
         $renamed = UploadedFile::fake()->createWithContent('renombrado.xlsx', file_get_contents($file->getRealPath()));
-        $this->postJson("/escenarios/$id/contenidos", ['archivo' => $renamed])->assertCreated();
+        $this->postJson("/escenarios/$id/contenidos", ['archivo' => $renamed])->assertOk();
+        $this->assertDatabaseCount('resultados_simulacion', 4);
+        $this->assertDatabaseCount('escenario_contenidos', 1);
+        // Con datos distintos y un nombre mal escrito, reemplaza al libro del escenario (nueva versión).
+        $this->postJson("/escenarios/$id/contenidos", ['archivo' => $this->excel(power: 7, name: 'Resultdos esc 1.xlsx')])->assertCreated()
+            ->assertJsonPath('data.nombre', 'resultados escenario 1.xlsx')
+            ->assertJsonPath('data.nombre_original', 'Resultdos esc 1.xlsx')
+            ->assertJsonPath('data.version', '1.1');
         $this->assertDatabaseCount('resultados_simulacion', 8);
         $this->assertDatabaseCount('escenario_contenidos', 2);
+        $this->assertSame(['resultados escenario 1.xlsx'], DB::table('escenario_contenidos')->distinct()->pluck('nombre')->all());
         $other = User::factory()->create();
         $other->assignRole('cliente');
         $this->actingAs($other)->getJson($url)->assertOk();
@@ -287,10 +297,11 @@ class ScenarioSolarImportTest extends TestCase
 
         $response->assertJsonCount(3, 'data.contenidos');
         $scenarioId = $response->json('data.id');
+        // Un Word cuyo nombre no dice «informe» es un documento y conserva su nombre.
         $manualId = collect($response->json('data.contenidos'))->firstWhere('nombre', 'manual.docx')['id'];
         $this->assertDatabaseCount('escenario_contenidos', 3);
         $this->assertDatabaseCount('resultados_simulacion', 4);
-        $this->assertDatabaseHas('escenario_contenidos', ['tipo' => 'datos']);
+        $this->assertDatabaseHas('escenario_contenidos', ['tipo' => 'datos', 'nombre' => 'resultados escenario 1.xlsx']);
         $this->assertDatabaseHas('escenario_contenidos', ['tipo' => 'documento', 'nombre' => 'manual.docx']);
         $this->assertDatabaseHas('escenario_contenidos', ['tipo' => 'documento', 'nombre' => 'Datos comunidad 1.xlsx']);
         $this->get("/escenarios/$scenarioId/contenidos/$manualId/download")->assertOk();

@@ -212,6 +212,20 @@ Cada escenario representa una alternativa de simulación. Sus sucesivas cargas s
 
 `GET /api/escenarios/ID` devuelve los metadatos y contenidos del escenario. Las rutas antiguas de emociones bajo escenarios y `/api/users`, `/api/roles`, `/api/me` están retiradas.
 
+### Número de escenario y nombres de archivo
+
+Cada escenario tiene un `numero` entero único (`"numero": 1`), independiente del `id` y del nombre visible. Se asigna al crear el escenario: el que indique el usuario o, si no, el que traiga el nombre del libro de resultados («resultados escenario 3.xlsx» ⇒ 3) cuando está libre; si no, el menor número disponible (sin escenarios ⇒ 1). Los escenarios existentes recibieron el número de su nombre («Escenario 1» ⇒ 1) o el siguiente libre.
+
+Los archivos se guardan con nombres canónicos, sin importar cómo se llamaran al subirlos (el nombre original queda en `contenidos[].nombre_original`):
+
+| Archivo | Se reconoce por | Nombre guardado | `contenidos[].tipo` |
+| --- | --- | --- | --- |
+| Libro de resultados de simulación | Hojas Minutos, Cada5min, Cada10min y Horas | `resultados escenario {numero}.xlsx` | `datos` |
+| Informe | El nombre dice «informe» o «reporte», en cualquier formato admitido (Word, PDF, Excel) | `informe escenario {n}.{extensión}` | `informe` |
+| Otro documento | Cualquier otro archivo (Word, PDF o Excel sin esas hojas) | Su nombre original | `documento` |
+
+El número del informe se toma del nombre subido («Informe_esc 2.docx» ⇒ 2); si no trae número, se reutiliza el del informe con el mismo contenido o con el mismo nombre original y, si no hay, se usa el siguiente consecutivo. Volver a subir un archivo con el mismo nombre canónico y contenido distinto lo reemplaza en una versión nueva del escenario; con el mismo contenido no se guarda nada. El mismo número de informe en otro formato (.docx ⇒ .pdf) también lo reemplaza. Un informe existente solo se actualiza si el archivo subido es más reciente que el guardado: el formulario envía la fecha del archivo (`File.lastModified`, en ms) como `fechas[i]` para `archivos[i]` o `fecha_archivo` para `archivo`, y se guarda en `contenidos[].fecha_archivo`; si es igual o más antigua, ese informe no se carga y la respuesta lo indica (`accion: omitido`). Un escenario tiene un solo libro de resultados. Formatos admitidos: `.xlsx`, `.xls`, `.doc`, `.docx`, `.pdf`.
+
 ## Tecnologías participantes
 
 Cada escenario declara qué tecnologías intervienen en la simulación. Unity usa el `codigo` para decidir qué elementos 3D, interfaces, animaciones y sonidos habilita; la asociación entre códigos y objetos 3D es responsabilidad de Unity. SceneHub no implementa ese comportamiento.
@@ -221,6 +235,7 @@ Cada escenario declara qué tecnologías intervienen en la simulación. Unity us
 ```json
 {
   "id": 1,
+  "numero": 1,
   "nombre": "Escenario 1",
   "descripcion": "Producción de agua desalinizada",
   "tecnologias": [

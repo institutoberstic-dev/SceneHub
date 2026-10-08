@@ -13,7 +13,7 @@ Respuesta JSON (ejemplo de estructura; no son datos de producción):
   "archivos": [
     {
       "id": 25,
-      "nombre": "Resultados caso 1.xlsx",
+      "nombre": "resultados escenario 1.xlsx",
       "muestreos": {
         "1": [{"tiempo_minutos": 1, "potencia_solar_w": 0}],
         "5": [{"tiempo_minutos": 5, "potencia_solar_w": 0}],
@@ -26,7 +26,9 @@ Respuesta JSON (ejemplo de estructura; no son datos de producción):
 
 - Cada muestreo devuelve la serie completa de la hoja correspondiente, ordenada por tiempo, sin duplicados ni paginación silenciosa. El importador admite hasta 10.000 registros por hoja y la vista pagina la tabla de 50 en 50. Para series mayores se debe acordar paginación y detección de eventos en servidor.
 - `archivos: []` significa que no hay archivos compatibles. Una hoja sin registros se representa con `[]`.
-- El nombre del archivo no importa. Un libro es «resultado de simulación» si contiene al menos dos de las hojas Minutos, Cada5min, Cada10min y Horas; desde ese momento se valida de forma estricta y, si falla, la carga completa se rechaza (422) con mensajes por hoja, fila, columna y celda (máximo 12 por archivo). Los libros sin esas hojas (p. ej. `Datos comunidad 1.xlsx`) y los Word se guardan como documentos descargables.
+- El nombre del archivo no importa para reconocerlo. Un libro es «resultado de simulación» si contiene al menos dos de las hojas Minutos, Cada5min, Cada10min y Horas; desde ese momento se valida de forma estricta y, si falla, la carga completa se rechaza (422) con mensajes por hoja, fila, columna y celda (máximo 12 por archivo). Los libros sin esas hojas (p. ej. `Datos comunidad 1.xlsx`) se guardan como documentos descargables; los archivos cuyo nombre dice «informe» o «reporte» (Word, PDF…) se guardan como informes.
+- Al guardarlo, el libro se renombra a `resultados escenario {número del escenario}.xlsx` (por eso `nombre` muestra ese nombre). Subirlo de nuevo con otro nombre y otros datos lo reemplaza en una versión nueva; con los mismos datos no se guarda nada. Solo se admite un libro de resultados por carga. Los informes se guardan como `informe escenario {n}.{extensión}` y solo se actualizan con un archivo más reciente (detalle en `unity-data-api.md`).
+- `POST /escenarios-analizar` (sesión; permiso `escenarios.crear` o `escenarios.versionar`, y owner si se envía `escenario_id`) analiza `archivos[]` sin guardarlos: tipo reconocido, errores de estructura, formato y registros por hoja, número en el nombre, `sha256`, archivos que ya tiene el escenario y número/nombre sugeridos. Lo usa la carga con arrastrar y soltar.
 - Formatos admitidos: básico de 13 columnas (`Resultados caso 1.xlsx`) y extendido de 18 columnas (`resultados escenario 1 1.xlsx`), que añade % estado de carga, Wh acum. excedente no aprovechado, Wh acum. entregados por el diésel, L acum. de combustible y Wh acum. de demanda no cubierta. Las columnas se ubican por encabezado (el orden no importa); la primera puede llamarse Hora o Minuto. Las cuatro hojas deben tener las mismas columnas y no se admiten columnas desconocidas.
 - Reglas por valor: tiempo entero, múltiplo del intervalo de la hoja y sin repetir (Horas se convierte a minutos); números con punto decimal; caudal, radiación, viento, potencia solar, energía almacenada y consumo no negativos; % estado de carga entre 0 y 100; acumulados (agua, salmuera, lodos, Wh y L acumulados) no negativos y no decrecientes en el tiempo; lodos enteros. Las celdas vacías se guardan como `null`. Las celdas con fórmula usan el valor calculado que guardó Excel. Máximo 10.000 registros por hoja.
 - Las claves numéricas de las mediciones son las exportadas en `resources/js/components/solarSampling.js`. Valores desconocidos se representan con `null`, nunca cero. Cada versión informa `variables_disponibles` para que la vista solo ofrezca las variables con datos.
