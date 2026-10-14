@@ -34,7 +34,7 @@ La pestaña **Actividad** registra quién hizo qué y cuándo.
 
 ## Qué NO hace SceneHub
 
-No muestra mapas, no reproyecta, no recalcula y no edita geometrías. Los archivos se guardan en almacenamiento **privado**: solo se descargan con sesión y permiso, o con el token de solo lectura del Puente de datos.
+No muestra mapas, no reproyecta, no recalcula y no edita geometrías. Los archivos se guardan en almacenamiento **privado**: solo se descargan con sesión y permiso, o por la API `/api/puente/territorio/*` con un token de solo lectura (de la cobertura «territorio» o el del Puente de datos).
 
 ## Prueba local (para las capturas)
 

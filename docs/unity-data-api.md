@@ -29,6 +29,8 @@ Las rutas de esta guía se agrupan en dos **coberturas** de token de solo lectur
 
 `POST /api/unity/imagenes` no cambia: sigue libre, con el límite de 30 solicitudes por minuto.
 
+Los paquetes territoriales publicados (por ejemplo, la escena 3D `.glb` del PT1) están en `/api/puente/territorio/manifiesto` y `/api/puente/territorio/archivos/{id}`. Esas rutas siempre exigen un token de la cobertura `territorio` (`--alcance=territorio`). Ver `docs/puente-anh/CONTRATO_API.md`.
+
 Cada cobertura tiene un modo en el `.env` del servidor (`API_TOKEN_SIMULACION`, `API_TOKEN_EMOCIONES`):
 
 - **`opcional`** (por defecto): las rutas responden sin token, igual que siempre. Si la solicitud trae token, el servidor lo valida (inválido, vencido o revocado: `401`; token de otra cobertura: `403`). Así cada cliente puede probar su token antes de que sea obligatorio.

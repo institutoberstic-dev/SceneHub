@@ -19,7 +19,8 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
- * API de SOLO LECTURA para la app de escritorio «Puente de datos» (prefijo /api/puente/v1).
+ * API de SOLO LECTURA para la app de escritorio «Puente de datos»: /api/puente/estado, /catalogo,
+ * /escenarios, /escenarios/{id}/versiones/{v}/excel, /territorio/manifiesto y /territorio/archivos/{id}.
  * Protegida por token (middleware puente.token). Contrato: docs/puente-anh/CONTRATO_API.md.
  */
 class PuenteController extends Controller
@@ -63,7 +64,7 @@ class PuenteController extends Controller
                         'nombre' => basename(str_replace('\\', '/', $contenido->ruta)),
                         'tamano' => filesize($ruta),
                         'sha256_archivo' => hash_file('sha256', $ruta),
-                        'url_descarga' => "escenarios/{$escenario->id}/versiones/{$version->version}/archivo",
+                        'url_descarga' => "/api/puente/escenarios/{$escenario->id}/versiones/{$version->version}/excel",
                     ] : null,
                 ];
             })->values()->all());

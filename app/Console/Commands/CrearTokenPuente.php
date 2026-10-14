@@ -9,7 +9,7 @@ class CrearTokenPuente extends Command
 {
     protected $signature = 'puente:token-crear
         {nombre : Nombre del equipo o uso, p. ej. "PC del proyecto" o "Unity gemelo"}
-        {--alcance=puente : Cobertura: puente (app de escritorio), simulacion (Unity) o emociones}
+        {--alcance=puente : Cobertura: puente (app de escritorio), territorio (paquetes del PT1), simulacion (Unity) o emociones}
         {--dias= : Días de vigencia (sin valor = no vence)}';
 
     protected $description = 'Crea un token de SOLO LECTURA para una cobertura de la API. Se muestra una sola vez.';

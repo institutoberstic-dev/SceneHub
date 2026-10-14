@@ -34,13 +34,25 @@ Route::middleware('api.token:simulacion')->group(function () {
 // storage/app/public/unity/{escenario_id|general}/{YYYY-MM-DD}. Limited to 30 requests per minute per IP.
 Route::post('/unity/imagenes', [UnityImagenesController::class, 'store'])->middleware('throttle:30,1')->name('unity.imagenes.store');
 
-// API de SOLO LECTURA para la app de escritorio «Puente de datos». Exige token
-// (php artisan puente:token-crear). No modifica ni reemplaza las rutas públicas de arriba.
-Route::prefix('puente/v1')->middleware(['puente.token', 'throttle:120,1'])->name('puente.')->group(function () {
-    Route::get('/estado', [PuenteController::class, 'estado'])->name('estado');
-    Route::get('/catalogo-variables', [PuenteController::class, 'catalogoVariables'])->name('catalogo');
-    Route::get('/escenarios', [PuenteController::class, 'escenarios'])->name('escenarios');
-    Route::get('/escenarios/{escenario}/versiones/{version}/archivo', [PuenteController::class, 'archivoVersion'])->whereNumber('escenario')->name('escenarios.archivo');
-    Route::get('/territorio/paquetes', [PuenteController::class, 'paquetesTerritoriales'])->name('territorio.paquetes');
-    Route::get('/territorio/archivos/{archivo}', [PuenteController::class, 'archivoTerritorial'])->whereNumber('archivo')->name('territorio.archivo');
+// --- API de SOLO LECTURA para la app de escritorio «Puente de datos» (ajuste 7 del encargo):
+// escenarios, catálogo, Excel original, manifiesto territorial y descarga de archivos.
+// Va en su propio espacio /api/puente/* para no mezclarse con las rutas públicas de Unity.
+// Tokens: php artisan puente:token-crear "<nombre>" --alcance=puente|territorio
+Route::prefix('puente')->middleware('throttle:120,1')->name('puente.')->group(function () {
+    // «Probar conexión»: acepta un token vigente de cualquier cobertura.
+    Route::get('/estado', [PuenteController::class, 'estado'])
+        ->middleware('api.token:puente,territorio,simulacion,emociones')->name('estado');
+
+    // Cobertura «puente» (siempre obligatoria).
+    Route::middleware('api.token:puente')->group(function () {
+        Route::get('/catalogo', [PuenteController::class, 'catalogoVariables'])->name('catalogo');
+        Route::get('/escenarios', [PuenteController::class, 'escenarios'])->name('escenarios');
+        Route::get('/escenarios/{escenario}/versiones/{version}/excel', [PuenteController::class, 'archivoVersion'])->whereNumber('escenario')->name('escenarios.excel');
+    });
+
+    // Paquetes territoriales PUBLICADOS (PT1): cobertura «territorio» o «puente» (siempre obligatoria).
+    Route::prefix('territorio')->middleware('api.token:territorio,puente')->name('territorio.')->group(function () {
+        Route::get('/manifiesto', [PuenteController::class, 'paquetesTerritoriales'])->name('manifiesto');
+        Route::get('/archivos/{archivo}', [PuenteController::class, 'archivoTerritorial'])->whereNumber('archivo')->name('archivo');
+    });
 });

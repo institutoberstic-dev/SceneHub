@@ -4,7 +4,7 @@
 |--------------------------------------------------------------------------
 | Catálogo de variables de los resultados de simulación
 |--------------------------------------------------------------------------
-| Se expone en la API de solo lectura (/api/puente/v1/catalogo-variables).
+| Se expone en la API de solo lectura (/api/puente/catalogo).
 | Las unidades deben coincidir con DataVersionsController::UNITS (contrato con
 | Unity); tests/Feature/PuenteApiTest lo comprueba para que no se desalineen.
 | 'rango_esperado' usa el formato "min..max" (vacío = sin límite).

@@ -54,7 +54,7 @@ Fecha: 14-oct-2026 · Encargo v9 · Proyecto GuajiraTech → base de datos ANH
 | Ejecutable PyInstaller | No generado | **Pendiente** (`scripts/construir_exe.ps1`) |
 | Destino SQL Server | Probado el fallo controlado sin pyodbc ni servidor. No hay pruebas contra un SQL Server real | Pendiente (opcional: SQL Server Express desechable) |
 | GeoPackage de salida | Se lee de vuelta: 648 celdas, SRID 9377, WKT idéntico. No se abrió en QGIS | Pendiente (paso 13 de la prueba manual) |
-| Contra la API real de SceneHub | No aplica: las rutas `/api/puente/v1` aún no existen | Pendiente (después de la COMPUERTA 1D) |
+| Contra la API real de SceneHub | Implementada el 14-oct (ver `CONTRATO_API.md`; rutas `/api/puente/estado`, `/catalogo`, `/escenarios`, `/territorio/manifiesto`…) | Probada contra SceneHub en local y en producción («Probar conexión») |
 
 ## 5. Comprobación paso a paso (para alguien no experto)
 1. **SceneHub sin cambios:** en `C:\xampp\htdocs\SceneHub`, `git status` solo debe mostrar la carpeta nueva `docs/puente-anh/`.

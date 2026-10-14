@@ -25,7 +25,7 @@ class ListarTokensPuente extends Command
 
         $this->table(['Cobertura', 'Modo', 'Rutas'], collect(config('api_tokens.coberturas', []))->map(fn (array $c, string $clave) => [
             $clave,
-            $clave === 'puente' || strtolower(trim((string) $c['modo'])) !== 'opcional' ? 'obligatorio' : 'opcional',
+            in_array($clave, ['puente', 'territorio'], true) || strtolower(trim((string) $c['modo'])) !== 'opcional' ? 'obligatorio' : 'opcional',
             $c['nombre'],
         ])->values());
 
