@@ -18,6 +18,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
             'scenario.access' => \App\Http\Middleware\EnsureScenarioAccess::class,
             'active' => \App\Http\Middleware\EnsureUserIsActive::class,
+            'puente.token' => \App\Http\Middleware\AutenticarTokenPuente::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

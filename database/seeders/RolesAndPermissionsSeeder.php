@@ -23,6 +23,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'escenarios.eliminar', 'escenarios.invitar', 'escenarios.versionar',
             'archivos.leer', 'archivos.actualizar',
             'emociones.leer', 'emociones.cargar', 'emociones.invitar',
+            'territorio.ver', 'territorio.subir', 'territorio.publicar',
         ])->mapWithKeys(
             fn (string $name) => [
                 $name => Permission::findOrCreate($name, 'web'),

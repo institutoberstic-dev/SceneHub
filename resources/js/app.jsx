@@ -14,6 +14,8 @@ import ResultsPage from './pages/ResultsPage';
 import RolesPage from './pages/RolesPage';
 import ScenariosPage from './pages/ScenariosPage';
 import ScenarioDetailPage from './pages/ScenarioDetailPage';
+import TerritoryDetailPage from './pages/TerritoryDetailPage';
+import TerritoryPage from './pages/TerritoryPage';
 import UsersPage from './pages/UsersPage';
 
 function ShellRoute({ children }) {
@@ -40,6 +42,8 @@ function App() {
                 <Route path="/escenarios" element={<PermissionRoute permission="escenarios.leer"><ShellRoute><ScenariosPage /></ShellRoute></PermissionRoute>} />
                 <Route path="/escenarios/:id" element={<PermissionRoute permission="escenarios.leer"><ShellRoute><ScenarioDetailPage /></ShellRoute></PermissionRoute>} />
                 <Route path="/resultados" element={<PermissionRoute permission="escenarios.leer"><ShellRoute><ResultsPage /></ShellRoute></PermissionRoute>} />
+                <Route path="/territorio" element={<PermissionRoute permission="territorio.ver"><ShellRoute><TerritoryPage /></ShellRoute></PermissionRoute>} />
+                <Route path="/territorio/:id" element={<PermissionRoute permission="territorio.ver"><ShellRoute><TerritoryDetailPage /></ShellRoute></PermissionRoute>} />
                 <Route path="/emociones" element={<PermissionRoute permission="emociones.leer"><ShellRoute><EmotionsPage /></ShellRoute></PermissionRoute>} />
                 <Route path="/emociones/:id" element={<PermissionRoute permission="emociones.leer"><ShellRoute><EmotionDetailPage /></ShellRoute></PermissionRoute>} />
                 <Route path="/users-list" element={<ShellRoute><UsersPage /></ShellRoute>} />

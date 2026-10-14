@@ -9,6 +9,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ResultadosController;
 use App\Http\Controllers\RolesController;
 use App\Http\Controllers\TecnologiasController;
+use App\Http\Controllers\TerritorioController;
 use App\Http\Controllers\UserController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -63,6 +64,26 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::get('/escenarios/{escenario}/contenidos/{contenido}/download', [EscenariosController::class, 'downloadContent'])->middleware(['permission:archivos.leer', 'scenario.access'])->name('escenarios.contents.download');
     Route::get('/escenarios/{escenario}/download', [EscenariosController::class, 'download'])->middleware(['permission:archivos.leer', 'scenario.access'])->name('escenarios.download');
     Route::delete('/escenarios/{escenario}', [EscenariosController::class, 'destroy'])->middleware('permission:escenarios.eliminar')->name('escenarios.destroy');
+
+    // Módulo territorial (paquete del PT1). Permisos: territorio.ver, territorio.subir, territorio.publicar.
+    Route::middleware('permission:territorio.ver')->group(function () {
+        Route::get('/territorio', [TerritorioController::class, 'index'])->name('territorio.index');
+        Route::get('/territorio/{paquete}', [TerritorioController::class, 'index'])->whereNumber('paquete')->name('territorio.show');
+        Route::get('/territorio-data', [TerritorioController::class, 'data'])->name('territorio.data');
+        Route::get('/territorio-data/{paquete}', [TerritorioController::class, 'detail'])->whereNumber('paquete')->name('territorio.detail');
+        Route::get('/territorio-paquetes/{paquete}/archivos/{archivo}/descargar', [TerritorioController::class, 'descargar'])->whereNumber(['paquete', 'archivo'])->name('territorio.archivos.descargar');
+    });
+    Route::middleware('permission:territorio.subir')->group(function () {
+        Route::post('/territorio-paquetes', [TerritorioController::class, 'store'])->name('territorio.store');
+        Route::post('/territorio-paquetes/{paquete}/archivos', [TerritorioController::class, 'subir'])->whereNumber('paquete')->name('territorio.archivos.store');
+        Route::delete('/territorio-paquetes/{paquete}/archivos/{archivo}', [TerritorioController::class, 'eliminarArchivo'])->whereNumber(['paquete', 'archivo'])->name('territorio.archivos.destroy');
+        Route::post('/territorio-paquetes/{paquete}/validar', [TerritorioController::class, 'validar'])->whereNumber('paquete')->name('territorio.validar');
+    });
+    Route::middleware('permission:territorio.publicar')->group(function () {
+        Route::post('/territorio-paquetes/{paquete}/validaciones/{validacion}/confirmar', [TerritorioController::class, 'confirmar'])->whereNumber(['paquete', 'validacion'])->name('territorio.confirmar');
+        Route::post('/territorio-paquetes/{paquete}/publicar', [TerritorioController::class, 'publicar'])->whereNumber('paquete')->name('territorio.publicar');
+        Route::post('/territorio-paquetes/{paquete}/retirar', [TerritorioController::class, 'retirar'])->whereNumber('paquete')->name('territorio.retirar');
+    });
 
     Route::middleware('role:admin')->group(function () {
         Route::get('/users-data', [UserController::class, 'data'])->name('users.data');

@@ -16,6 +16,10 @@ class UserController extends Controller
             'archivos.leer', 'archivos.actualizar',
         ],
         'emociones' => ['emociones.leer', 'emociones.cargar', 'emociones.invitar'],
+        // Sistema territorial: subir y validar paquetes del PT1.
+        'territorio' => ['territorio.ver', 'territorio.subir'],
+        // Revisión humana: confirmar advertencias, publicar y retirar. El primer permiso identifica el módulo.
+        'territorio_publicacion' => ['territorio.publicar', 'territorio.ver'],
     ];
 
     public function data()
