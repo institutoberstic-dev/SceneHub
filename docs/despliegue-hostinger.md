@@ -73,7 +73,7 @@ php artisan puente:token-listar
 php artisan puente:token-revocar <id>
 ```
 
-Verificación rápida: `GET /api/puente/v1/estado` sin token responde 401; con `Authorization: Bearer <token>` responde 200. `GET /api/escenarios` sigue respondiendo igual que antes, sin token (Unity).
+Verificación rápida: `GET /api/puente/estado` sin token responde 401 (antes era `/api/puente/v1/estado`; ver la última sección); con `Authorization: Bearer <token>` responde 200. `GET /api/escenarios` sigue respondiendo igual que antes, sin token (Unity).
 
 Reversión: `php artisan migrate:rollback --step=2 --force` elimina las tablas nuevas (y los paquetes y tokens creados). Para conservarlos, restaurar el respaldo en lugar de revertir. Los permisos `territorio.*` pueden quedarse: no afectan a otros módulos.
 
@@ -104,3 +104,23 @@ Para activar la protección de una cobertura:
 Desde ese momento, cualquier cliente sin token recibe **401**. `POST /api/unity/imagenes` no cambia.
 
 **Reversa inmediata:** volver a `opcional` y ejecutar `php artisan config:cache`.
+
+## Rutas definitivas de la API de la app: `/api/puente/…` (octubre 2026)
+
+No hay migraciones. Las rutas pierden el `v1` y toman los nombres del encargo:
+
+| Antes | Ahora |
+| --- | --- |
+| `/api/puente/v1/estado` | `/api/puente/estado` (acepta un token de cualquier cobertura) |
+| `/api/puente/v1/catalogo-variables` | `/api/puente/catalogo` |
+| `/api/puente/v1/escenarios` | `/api/puente/escenarios` |
+| `/api/puente/v1/escenarios/{id}/versiones/{v}/archivo` | `/api/puente/escenarios/{id}/versiones/{v}/excel` |
+| `/api/puente/v1/territorio/paquetes` | `/api/puente/territorio/manifiesto` (también acepta tokens `--alcance=territorio`) |
+| `/api/puente/v1/territorio/archivos/{id}` | `/api/puente/territorio/archivos/{id}` |
+
+Las rutas anteriores responden 404.
+
+1. Después del `git pull`, ejecutar `php artisan optimize:clear`, `config:cache` y `route:cache`.
+2. **En el mismo momento**, actualizar la app «Puente de datos» del PC. Si la app tiene guardado el prefijo antiguo, lo convierte sola. Los tokens existentes siguen sirviendo.
+
+Comandos de tokens: ver la tabla «Comandos» en `docs/puente-anh/CONTRATO_API.md`. Para eliminarlos de forma definitiva: `php artisan puente:token-eliminar <id>`, o `--revocados` para limpiar los revocados y vencidos.

@@ -12,14 +12,20 @@
 |                  de otra cobertura → 403. Sirve para que cada cliente pruebe su token y
 |                  para ver en «Último uso» quién ya lo envía.
 |   - obligatorio: sin token válido de esa cobertura → 401.
+| «puente» y «territorio» son siempre obligatorias (nunca tuvieron versión pública).
 | Cualquier otro valor se trata como «obligatorio» (falla cerrada).
+| GET /api/puente/estado acepta un token vigente de cualquier cobertura (para «Probar conexión»).
 | Tras cambiar el .env en producción: php artisan config:cache
 */
 
 return [
     'coberturas' => [
         'puente' => [
-            'nombre' => 'Puente de datos (app de escritorio): /api/puente/v1/*',
+            'nombre' => 'Puente de datos (app de escritorio): /api/puente/catalogo, /api/puente/escenarios* y /api/puente/territorio/*',
+            'modo' => 'obligatorio',
+        ],
+        'territorio' => [
+            'nombre' => 'Paquetes territoriales publicados (PT1): /api/puente/territorio/manifiesto y /archivos/{id}',
             'modo' => 'obligatorio',
         ],
         'simulacion' => [

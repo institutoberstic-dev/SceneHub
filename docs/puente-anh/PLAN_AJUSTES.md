@@ -5,14 +5,14 @@ Actualizado: 14-oct-2026. El integrador aprobó avanzar con el **sistema territo
 | # | Ajuste | Estado | Depende de |
 |---|---|---|---|
 | 1 | Privacidad de la API pública | Pendiente. Las rutas nuevas ya usan lista blanca | P-01 (Unity), P-02 |
-| 2 | Catálogo de variables con unidad | **Hecho (aditivo):** `config/catalogo_variables.php`, expuesto en `/api/puente/v1/catalogo-variables` | — |
+| 2 | Catálogo de variables con unidad | **Hecho (aditivo):** `config/catalogo_variables.php`, expuesto en `/api/puente/catalogo` | — |
 | 3 | Inmutabilidad de las versiones de escenarios | Pendiente. El módulo territorial ya nace inmutable | P-04 |
 | 4 | Plantilla del Excel y formatos nuevos | Pendiente | P-05 y el Excel real del escenario 2 |
-| 5 | Descarga autenticada del Excel original | **Hecho (aditivo):** `/api/puente/v1/escenarios/{id}/versiones/{v}/archivo`, con `X-Content-SHA256` | — |
+| 5 | Descarga autenticada del Excel original | **Hecho (aditivo):** `/api/puente/escenarios/{id}/versiones/{v}/excel`, con `X-Content-SHA256` | — |
 | 6 | Módulo territorial | **Hecho:** rama `feature/territorio-api-token` | — |
 | 7 | API de solo lectura con token | **Hecho:** misma rama | — |
 | 8 | Ubicación de escenarios en la malla | Solo evaluado (P-18) | Paquete real del PT1 |
-| 9 | Token por cobertura en las rutas públicas (simulación y emociones) | **Hecho:** rama `feature/api-token-coberturas`, modo opcional por defecto | Activar «obligatorio» cuando Unity y el cliente de emociones envíen el token |
+| 9 | Token por cobertura: en las rutas públicas (simulación y emociones) y un token propio de territorio | **Hecho:** rama `feature/api-token-coberturas`, modo opcional por defecto | Activar «obligatorio» cuando Unity y el cliente de emociones envíen el token |
 
 ## Ajuste 6 · Sistema territorial
 
@@ -42,7 +42,7 @@ Actualizado: 14-oct-2026. El integrador aprobó avanzar con el **sistema territo
   - Tabla `puente_tokens`, que solo guarda el SHA-256 del token.
   - Middleware `puente.token`: Bearer, solo métodos seguros, vencimiento y revocación.
   - Comandos `puente:token-crear`, `puente:token-listar` y `puente:token-revocar`.
-  - Grupo de rutas nuevo `/api/puente/v1/*` con `throttle:120,1`.
+  - Rutas nuevas con `throttle:120,1`. Nacieron en `/api/puente/v1/*`; el 14-oct (noche) quedaron en `/api/puente/*`, con los nombres del encargo (ver la última sección).
   - Resources con lista blanca (`EscenarioPuenteResource` y `PaqueteTerritorialPuenteResource`).
   - Sin Sanctum ni dependencias nuevas.
 - **Consumidores afectados:** ninguno. Las rutas públicas de Unity no cambian; `PuenteApiTest::test_las_rutas_publicas_de_unity_siguen_sin_token` lo comprueba.
@@ -64,7 +64,8 @@ Actualizado: 14-oct-2026. El integrador aprobó avanzar con el **sistema territo
 
 - **Pedido del integrador (14-oct):** que las rutas públicas de emociones y de resultados de simulación también puedan protegerse con token, igual que el Puente de datos.
 - **Diseño:**
-  - `config/api_tokens.php` define tres coberturas: `puente` (siempre obligatoria), `simulacion` y `emociones`.
+  - `config/api_tokens.php` define cuatro coberturas: `puente` y `territorio` (siempre obligatorias), `simulacion` y `emociones`.
+  - Las rutas territoriales de la app (`/api/puente/territorio/*`) aceptan tokens `territorio` o `puente`.
   - Se reutiliza la misma tabla `puente_tokens`: la columna `alcance` guarda la cobertura (los tokens `lectura` antiguos valen para `puente`). No hay migración nueva.
   - El mismo middleware atiende los alias `puente.token` y `api.token:<cobertura>`. Se ejecuta antes de resolver el escenario: sin token responde 401, no 404.
   - `puente:token-crear` recibe `--alcance=`; `puente:token-listar` muestra la cobertura de cada token y el modo de cada cobertura.
@@ -73,9 +74,32 @@ Actualizado: 14-oct-2026. El integrador aprobó avanzar con el **sistema territo
   - en modo opcional, ninguno;
   - en modo obligatorio, Unity y cualquier cliente externo de emociones;
   - la web no se afecta, porque usa rutas propias con sesión (`/escenarios-data`, `/emociones-data`).
-- **Pruebas:** `tests/Feature/ApiTokenCoberturaTest.php` (8 pruebas): modo opcional sin cambios; validación del token cuando se envía; los dos modos obligatorios en todas sus rutas; cobertura cruzada (403); un modo desconocido se trata como obligatorio; Puente siempre obligatorio y con tokens antiguos válidos; carga de imágenes de Unity sin cambios; comandos.
-  - Suite completa: 90 pasan y fallan las mismas 10 de antes (emociones). Pint sin observaciones.
+- **Pruebas:** `tests/Feature/ApiTokenCoberturaTest.php` (9 pruebas, incluida la de la ruta territorial): modo opcional sin cambios; validación del token cuando se envía; los dos modos obligatorios en todas sus rutas; cobertura cruzada (403); un modo desconocido se trata como obligatorio; Puente siempre obligatorio y con tokens antiguos válidos; carga de imágenes de Unity sin cambios; comandos.
+  - Suite completa: 91 pasan y fallan las mismas 10 de antes (emociones). Pint sin observaciones.
+  - App de Python: probada contra SceneHub levantado en local (ver la última sección).
   - Comprobado también con `route:cache` y `config:cache`.
 - **Reversa:**
   - inmediata: `API_TOKEN_*=opcional` y `php artisan config:cache`;
   - total: revertir la rama, sin migraciones.
+
+## Rutas definitivas de la API de la app (14-oct, noche)
+
+- **Criterio (encargo):**
+  - el ajuste 7 pide una API de la app con escenarios, catálogo, Excel original, manifiesto territorial y descarga de archivos;
+  - la regla 4 prefiere rutas nuevas, separadas de lo que usa Unity.
+- **Rutas:**
+  - `/api/puente/estado` acepta un token de cualquier cobertura.
+  - `/api/puente/catalogo`, `/api/puente/escenarios` y `/api/puente/escenarios/{id}/versiones/{v}/excel` usan la cobertura `puente`.
+  - `/api/puente/territorio/manifiesto` y `/api/puente/territorio/archivos/{id}` usan la cobertura `territorio` o `puente`.
+  - Sin `v1`.
+- **Comando nuevo `puente:token-eliminar`:**
+  - Elimina un token de forma definitiva, con confirmación (`--force` la omite).
+  - Con `--revocados` borra todos los revocados y vencidos.
+  - `puente:token-revocar` sigue disponible para anular sin perder el historial.
+- **App de Python:**
+  - Prefijo `/api/puente`; la configuración guardada con `/api/puente/v1` o `/api` se convierte sola.
+  - Los datos de prueba quedan en `fixtures/api/{estado,catalogo,escenarios}.json`, `fixtures/api/territorio/manifiesto.json` y `fixtures/descargas/escenarios/{id}/versiones/{v}/excel`.
+- **Pruebas:**
+  - SceneHub: 93 pasan y fallan las mismas 10 de antes. Pint sin observaciones.
+  - App: 28 pasan. También se probó contra SceneHub en local, incluida la conversión del prefijo antiguo.
+- **Reversa:** revertir la rama (sin migraciones).

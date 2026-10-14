@@ -124,14 +124,55 @@ class ApiTokenCoberturaTest extends TestCase
     public function test_el_puente_sigue_obligatorio_y_acepta_los_tokens_historicos(): void
     {
         $this->modo('puente', 'opcional');
-        $this->getJson('/api/puente/v1/estado')->assertUnauthorized();
+        $this->getJson('/api/puente/escenarios')->assertUnauthorized();
 
         $historico = 'puente_'.str_repeat('a', 64);
         PuenteToken::create(['nombre' => 'PC antiguo', 'token_hash' => PuenteToken::hash($historico), 'alcance' => 'lectura']);
-        $this->con($historico)->getJson('/api/puente/v1/estado')->assertOk();
+        $this->con($historico)->getJson('/api/puente/escenarios')->assertOk();
         $this->flushHeaders();
 
-        $this->con($this->token('simulacion'))->getJson('/api/puente/v1/estado')->assertForbidden();
+        $this->con($this->token('simulacion'))->getJson('/api/puente/escenarios')->assertForbidden();
+    }
+
+    public function test_territorio_tiene_su_cobertura_y_siempre_exige_token(): void
+    {
+        $this->modo('territorio', 'opcional');
+        foreach (['/api/puente/territorio/manifiesto', '/api/puente/territorio/archivos/999'] as $ruta) {
+            $this->getJson($ruta)->assertUnauthorized();
+        }
+
+        $territorio = $this->token('territorio');
+        $this->con($territorio)->getJson('/api/puente/territorio/manifiesto')->assertOk()->assertExactJson(['paquetes' => []]);
+        $this->con($territorio)->getJson('/api/puente/territorio/archivos/999')->assertNotFound();
+        $this->con($territorio)->getJson('/api/puente/escenarios')->assertForbidden();
+        $this->flushHeaders();
+
+        $this->con($this->token('puente'))->getJson('/api/puente/territorio/manifiesto')->assertOk();
+        $this->flushHeaders();
+        foreach (['simulacion', 'emociones'] as $otra) {
+            $this->con($this->token($otra))->getJson('/api/puente/territorio/manifiesto')->assertForbidden();
+            $this->flushHeaders();
+        }
+
+        $this->con($territorio)->getJson('/api/puente/v1/territorio/paquetes')->assertNotFound();
+    }
+
+    public function test_rutas_bajo_api_puente_y_estado_para_cualquier_cobertura(): void
+    {
+        $this->getJson('/api/puente/estado')->assertUnauthorized();
+        $this->withHeader('Authorization', 'Bearer puente_inventado')->getJson('/api/puente/estado')->assertUnauthorized();
+        $this->flushHeaders();
+        foreach (['puente', 'territorio', 'simulacion', 'emociones'] as $cobertura) {
+            $this->con($this->token($cobertura))->getJson('/api/puente/estado')->assertOk()->assertJsonPath('servicio', 'SceneHub');
+            $this->flushHeaders();
+        }
+
+        $puente = $this->token('puente');
+        $this->con($puente)->getJson('/api/puente/catalogo')->assertOk();
+        $this->con($puente)->getJson('/api/puente/escenarios')->assertOk()->assertExactJson(['escenarios' => []]);
+        foreach (['/api/puente/v1/estado', '/api/puente/v1/escenarios', '/api/estado', '/api/catalogo-variables', '/api/resultados', '/api/territorio/paquetes'] as $vieja) {
+            $this->con($puente)->getJson($vieja)->assertNotFound();
+        }
     }
 
     public function test_los_tokens_son_de_solo_lectura_y_la_carga_de_imagenes_de_unity_no_cambia(): void
@@ -142,6 +183,33 @@ class ApiTokenCoberturaTest extends TestCase
 
         $this->post('/api/unity/imagenes', ['imagen' => UploadedFile::fake()->image('captura.png')], ['Accept' => 'application/json'])
             ->assertCreated()->assertJsonPath('ok', true);
+    }
+
+    public function test_comando_eliminar_tokens(): void
+    {
+        [$vigente, $claro] = PuenteToken::emitir('PC vigente', null, 'puente');
+        [$revocado] = PuenteToken::emitir('PC revocado', null, 'puente');
+        $revocado->update(['revocado_en' => now()]);
+        [$vencido] = PuenteToken::emitir('PC vencido', 1, 'territorio');
+        $vencido->update(['expira_en' => now()->subDay()]);
+
+        $this->assertSame(1, Artisan::call('puente:token-eliminar'));
+        $this->assertSame(1, Artisan::call('puente:token-eliminar', ['id' => $vigente->id, '--revocados' => true]));
+        $this->assertSame(1, Artisan::call('puente:token-eliminar', ['id' => 999, '--force' => true]));
+
+        $this->artisan('puente:token-eliminar', ['id' => $vigente->id])
+            ->expectsConfirmation("Se eliminará el token #{$vigente->id} «PC vigente» (cobertura: puente). Está VIGENTE: el cliente que lo usa perderá el acceso de inmediato. ¿Continuar?", 'no')
+            ->assertSuccessful();
+        $this->assertSame(3, PuenteToken::count());
+
+        $this->assertSame(0, Artisan::call('puente:token-eliminar', ['--revocados' => true, '--force' => true]));
+        $this->assertSame(['PC vigente'], PuenteToken::pluck('nombre')->all());
+
+        $this->con($claro)->getJson('/api/puente/estado')->assertOk();
+        $this->flushHeaders();
+        $this->assertSame(0, Artisan::call('puente:token-eliminar', ['id' => $vigente->id, '--force' => true]));
+        $this->assertSame(0, PuenteToken::count());
+        $this->con($claro)->getJson('/api/puente/estado')->assertUnauthorized();
     }
 
     public function test_comando_crea_tokens_por_cobertura_y_lista_el_modo(): void
@@ -161,6 +229,7 @@ class ApiTokenCoberturaTest extends TestCase
         $salida = Artisan::output();
         $this->assertMatchesRegularExpression('/simulacion\s*\|\s*opcional/', $salida);
         $this->assertMatchesRegularExpression('/emociones\s*\|\s*obligatorio/', $salida);
+        $this->assertMatchesRegularExpression('/territorio\s*\|\s*obligatorio/', $salida);
         $this->assertStringContainsString('Unity gemelo', $salida);
     }
 }

@@ -34,7 +34,7 @@ class PaqueteTerritorialPuenteResource extends JsonResource
                 'fecha_captura' => $a->fecha_captura?->format('Y-m-d'),
                 'es_sensible' => $a->es_sensible,
                 'capa' => $a->capa,
-                'url_descarga' => 'territorio/archivos/'.$a->id,
+                'url_descarga' => '/api/puente/territorio/archivos/'.$a->id,
             ])->values(),
         ];
     }

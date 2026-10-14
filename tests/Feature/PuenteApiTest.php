@@ -21,10 +21,9 @@ class PuenteApiTest extends TestCase
     use RefreshDatabase;
 
     private const RUTAS = [
-        '/api/puente/v1/estado',
-        '/api/puente/v1/catalogo-variables',
-        '/api/puente/v1/escenarios',
-        '/api/puente/v1/territorio/paquetes',
+        '/api/puente/estado',
+        '/api/puente/catalogo',
+        '/api/puente/escenarios',
     ];
 
     private string $carpeta;
@@ -77,16 +76,16 @@ class PuenteApiTest extends TestCase
     public function test_token_revocado_o_vencido_deja_de_funcionar_y_solo_admite_lectura(): void
     {
         [$modelo, $token] = PuenteToken::emitir('PC');
-        $this->conToken($token)->getJson('/api/puente/v1/estado')->assertOk()->assertJsonPath('version_api', '1');
-        $this->conToken($token)->postJson('/api/puente/v1/estado')->assertStatus(405);
+        $this->conToken($token)->getJson('/api/puente/estado')->assertOk()->assertJsonPath('version_api', '1');
+        $this->conToken($token)->postJson('/api/puente/estado')->assertStatus(405);
         $this->assertNotNull($modelo->fresh()->ultimo_uso_en);
 
         $modelo->update(['revocado_en' => now()]);
-        $this->conToken($token)->getJson('/api/puente/v1/estado')->assertUnauthorized();
+        $this->conToken($token)->getJson('/api/puente/estado')->assertUnauthorized();
 
         [$vencido, $otro] = PuenteToken::emitir('PC vencido', 1);
         $vencido->update(['expira_en' => now()->subMinute()]);
-        $this->conToken($otro)->getJson('/api/puente/v1/estado')->assertUnauthorized();
+        $this->conToken($otro)->getJson('/api/puente/estado')->assertUnauthorized();
     }
 
     public function test_el_token_en_claro_no_se_guarda(): void
@@ -113,13 +112,13 @@ class PuenteApiTest extends TestCase
     public function test_escenarios_con_lista_blanca_y_huella_del_archivo(): void
     {
         [$escenario, $ruta] = $this->escenarioConVersion();
-        $respuesta = $this->conToken($this->token())->getJson('/api/puente/v1/escenarios')->assertOk();
+        $respuesta = $this->conToken($this->token())->getJson('/api/puente/escenarios')->assertOk();
 
         $respuesta->assertJsonPath('escenarios.0.id', $escenario->id)
             ->assertJsonPath('escenarios.0.versiones_datos.0.version', '1.0')
             ->assertJsonPath('escenarios.0.versiones_datos.0.sha256', str_repeat('b', 64))
             ->assertJsonPath('escenarios.0.versiones_datos.0.archivo.sha256_archivo', hash_file('sha256', $ruta))
-            ->assertJsonPath('escenarios.0.versiones_datos.0.archivo.url_descarga', "escenarios/{$escenario->id}/versiones/1.0/archivo");
+            ->assertJsonPath('escenarios.0.versiones_datos.0.archivo.url_descarga', "/api/puente/escenarios/{$escenario->id}/versiones/1.0/excel");
         $texto = $respuesta->getContent();
         foreach (['persona.real@example.invalid', '"owner"', '"users"', '"ruta"', 'storage_directory', 'public/escenarios'] as $prohibido) {
             $this->assertStringNotContainsString($prohibido, $texto);
@@ -131,15 +130,15 @@ class PuenteApiTest extends TestCase
     {
         [$escenario, $ruta] = $this->escenarioConVersion();
         $token = $this->token();
-        $descarga = $this->conToken($token)->get("/api/puente/v1/escenarios/{$escenario->id}/versiones/1.0/archivo")->assertOk();
+        $descarga = $this->conToken($token)->get("/api/puente/escenarios/{$escenario->id}/versiones/1.0/excel")->assertOk();
         $this->assertSame(hash_file('sha256', $ruta), $descarga->headers->get('X-Content-SHA256'));
-        $this->conToken($token)->get("/api/puente/v1/escenarios/{$escenario->id}/versiones/9.9/archivo")->assertNotFound();
-        $this->flushHeaders()->get("/api/puente/v1/escenarios/{$escenario->id}/versiones/1.0/archivo")->assertUnauthorized();
+        $this->conToken($token)->get("/api/puente/escenarios/{$escenario->id}/versiones/9.9/excel")->assertNotFound();
+        $this->flushHeaders()->get("/api/puente/escenarios/{$escenario->id}/versiones/1.0/excel")->assertUnauthorized();
     }
 
     public function test_catalogo_de_variables_alineado_con_las_unidades_de_unity(): void
     {
-        $variables = collect($this->conToken($this->token())->getJson('/api/puente/v1/catalogo-variables')->assertOk()->json('variables'));
+        $variables = collect($this->conToken($this->token())->getJson('/api/puente/catalogo')->assertOk()->json('variables'));
         $this->assertCount(17, $variables);
         $unidades = $variables->pluck('unidad', 'clave')->all();
         $esperadas = DataVersionsController::UNITS;
@@ -168,14 +167,15 @@ class PuenteApiTest extends TestCase
         auth()->logout();
 
         $token = $this->token();
-        $lista = $this->conToken($token)->getJson('/api/puente/v1/territorio/paquetes')->assertOk();
-        $lista->assertJsonCount(1, 'paquetes')->assertJsonPath('paquetes.0.version', 'v01')->assertJsonCount(4, 'paquetes.0.archivos');
+        $lista = $this->conToken($token)->getJson('/api/puente/territorio/manifiesto')->assertOk();
+        $lista->assertJsonCount(1, 'paquetes')->assertJsonPath('paquetes.0.version', 'v01')->assertJsonCount(4, 'paquetes.0.archivos')
+            ->assertJsonPath('paquetes.0.archivos.0.url_descarga', '/api/puente/territorio/archivos/'.PaqueteTerritorial::find($publicado)->archivos()->orderBy('id')->value('id'));
         $this->assertStringNotContainsString('"ruta"', $lista->getContent());
 
         $archivoPublicado = PaqueteTerritorial::find($publicado)->archivos()->where('tipo', 'georef_json')->first();
         $archivoBorrador = PaqueteTerritorial::find($borrador)->archivos()->first();
-        $this->conToken($token)->get('/api/puente/v1/territorio/archivos/'.$archivoPublicado->id)->assertOk()->assertHeader('X-Content-SHA256', $archivoPublicado->sha256);
-        $this->conToken($token)->get('/api/puente/v1/territorio/archivos/'.$archivoBorrador->id)->assertNotFound();
+        $this->conToken($token)->get('/api/puente/territorio/archivos/'.$archivoPublicado->id)->assertOk()->assertHeader('X-Content-SHA256', $archivoPublicado->sha256);
+        $this->conToken($token)->get('/api/puente/territorio/archivos/'.$archivoBorrador->id)->assertNotFound();
     }
 
     public function test_las_rutas_publicas_de_unity_siguen_sin_token(): void
