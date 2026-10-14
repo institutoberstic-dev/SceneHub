@@ -1,9 +1,9 @@
 # Despliegue del proyecto Laravel
 
-No hay conexión SSH ni ruta de instalación de Hostinger configurada en este repositorio. Ejecutar estos pasos en la carpeta que contiene `artisan`, después de revisar los cambios y respaldar base de datos y archivos. La migración `normalize_emotion_tables` elimina las columnas antiguas del promedio emocional.
+No hay conexión SSH ni ruta de instalación de Hostinger configurada en este repositorio. **La consola SSH de Hostinger usa PHP 8.1 por defecto y el proyecto exige 8.2 o superior**: antes de `composer` o `artisan`, ejecutar `export PATH=/opt/alt/php82/usr/bin:$PATH` (o dejarlo en `~/.bash_profile`) y comprobar con `php -v`. El servidor despliega la rama `main`. Ejecutar estos pasos en la carpeta que contiene `artisan`, después de revisar los cambios y respaldar base de datos y archivos. La migración `normalize_emotion_tables` elimina las columnas antiguas del promedio emocional.
 
 ```sh
-git pull --ff-only origin master
+git pull --ff-only origin main
 composer install --no-dev --prefer-dist --optimize-autoloader
 npm ci
 npm run build
@@ -76,3 +76,31 @@ php artisan puente:token-revocar <id>
 Verificación rápida: `GET /api/puente/v1/estado` sin token responde 401; con `Authorization: Bearer <token>` responde 200. `GET /api/escenarios` sigue respondiendo igual que antes, sin token (Unity).
 
 Reversión: `php artisan migrate:rollback --step=2 --force` elimina las tablas nuevas (y los paquetes y tokens creados). Para conservarlos, restaurar el respaldo en lugar de revertir. Los permisos `territorio.*` pueden quedarse: no afectan a otros módulos.
+
+## Token por cobertura en las rutas públicas de simulación y emociones (octubre 2026)
+
+No hay migraciones. Después del `git pull`:
+
+```sh
+php artisan optimize:clear
+php artisan config:cache
+php artisan route:cache
+```
+
+Las rutas públicas de `/api` quedan en dos coberturas: **simulacion** (`/api/escenarios*`, `/api/tecnologias`) y **emociones** (`/api/emociones*`). El modo de cada una se elige en el `.env`; si no se define, es `opcional`, que responde igual que antes:
+
+```sh
+API_TOKEN_SIMULACION=opcional
+API_TOKEN_EMOCIONES=opcional
+```
+
+Para activar la protección de una cobertura:
+
+1. Crear un token por cliente: `php artisan puente:token-crear "Unity gemelo" --alcance=simulacion --dias=365` (o `--alcance=emociones`).
+2. Configurar el cliente para que envíe `Authorization: Bearer <token>`.
+3. Confirmar con `php artisan puente:token-listar` que el token ya muestra «Último uso».
+4. Cambiar a `API_TOKEN_SIMULACION=obligatorio` en el `.env` y ejecutar `php artisan config:cache`.
+
+Desde ese momento, cualquier cliente sin token recibe **401**. `POST /api/unity/imagenes` no cambia.
+
+**Reversa inmediata:** volver a `opcional` y ejecutar `php artisan config:cache`.

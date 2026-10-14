@@ -19,7 +19,13 @@ return Application::configure(basePath: dirname(__DIR__))
             'scenario.access' => \App\Http\Middleware\EnsureScenarioAccess::class,
             'active' => \App\Http\Middleware\EnsureUserIsActive::class,
             'puente.token' => \App\Http\Middleware\AutenticarTokenPuente::class,
+            'api.token' => \App\Http\Middleware\AutenticarTokenPuente::class,
         ]);
+        // El token se revisa antes de buscar el escenario: sin token válido responde 401, no 404.
+        $middleware->prependToPriorityList(
+            before: \Illuminate\Routing\Middleware\SubstituteBindings::class,
+            prepend: \App\Http\Middleware\AutenticarTokenPuente::class,
+        );
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

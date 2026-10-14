@@ -34,7 +34,7 @@ Fecha: 14-oct-2026 · Estado: **Pendiente de confirmación por el equipo de Unit
 4. El algoritmo del SHA-256 de `DataVersions::register` (cualquier cambio fuerza descargas en todos los dispositivos).
 5. Los códigos de `tecnologias` y `categorias_tecnologia` (estables; se desactivan, no se borran ni renombran).
 6. `POST /api/unity/imagenes`: campos, límites, respuesta y el disco `public` con `storage:link`.
-7. Que `/api/*` no exija autenticación **en las rutas existentes**. Cualquier token nuevo va en **rutas nuevas** (p. ej. `/api/puente/*`).
+7. Que `/api/*` no exija autenticación **en las rutas existentes**. **Actualización del 14-oct (decisión del integrador):** las rutas existentes quedan en dos coberturas de token (`simulacion` y `emociones`). Por defecto están en modo **opcional** y no cambian nada para Unity. Pasar a modo **obligatorio** (`API_TOKEN_SIMULACION=obligatorio` en el `.env`) rompe a cualquier cliente que no envíe el token. Antes de activarlo, Unity debe enviar `Authorization: Bearer …` y el token debe mostrar «Último uso» en `puente:token-listar`.
 8. Los `id` de escenario (Unity los guarda en caché por escenario).
 
 ## Cómo se protegerá en la fase 1C

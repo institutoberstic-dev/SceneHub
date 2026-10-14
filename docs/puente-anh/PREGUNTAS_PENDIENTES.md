@@ -9,6 +9,8 @@ Actualizado: 14-oct-2026 (tarde).
 > - **P-07**: si falta `pdo_sqlite`, el servidor lo marca como advertencia y la revisión completa la hace el Puente.
 > - **P-13 → A** y **P-16 → A**: aplicados en la API nueva.
 >
+> **Decisión del integrador (14-oct, tarde):** las rutas públicas de emociones y de simulación tienen una cobertura de token cada una (`config/api_tokens.php`). Están en modo **opcional** hasta que sus clientes envíen el token; el paso a **obligatorio** se hace en el `.env`. Esto avanza P-10 (emociones) y protege el acceso, pero no cambia los campos que se exponen (P-02 sigue abierta).
+>
 > Siguen abiertas: P-01, P-02, P-04 (escenarios), P-05, P-06, P-09, P-10, P-11, P-14, P-15, P-17 y P-18. Marca con `[x]` la opción elegida y devuelve el archivo; se retoma solo con las respuestas.
 
 ---

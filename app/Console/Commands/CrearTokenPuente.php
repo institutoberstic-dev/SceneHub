@@ -7,9 +7,12 @@ use Illuminate\Console\Command;
 
 class CrearTokenPuente extends Command
 {
-    protected $signature = 'puente:token-crear {nombre : Nombre del equipo o uso, p. ej. "PC del proyecto"} {--dias= : Días de vigencia (sin valor = no vence)}';
+    protected $signature = 'puente:token-crear
+        {nombre : Nombre del equipo o uso, p. ej. "PC del proyecto" o "Unity gemelo"}
+        {--alcance=puente : Cobertura: puente (app de escritorio), simulacion (Unity) o emociones}
+        {--dias= : Días de vigencia (sin valor = no vence)}';
 
-    protected $description = 'Crea un token de SOLO LECTURA para la app «Puente de datos». Se muestra una sola vez.';
+    protected $description = 'Crea un token de SOLO LECTURA para una cobertura de la API. Se muestra una sola vez.';
 
     public function handle(): int
     {
@@ -19,14 +22,22 @@ class CrearTokenPuente extends Command
 
             return self::FAILURE;
         }
-        [$token, $claro] = PuenteToken::emitir(mb_substr($this->argument('nombre'), 0, 120), $dias ? (int) $dias : null);
+        $cobertura = strtolower(trim((string) $this->option('alcance')));
+        if (! in_array($cobertura, PuenteToken::coberturas(), true)) {
+            $this->error('--alcance debe ser uno de: '.implode(', ', PuenteToken::coberturas()).'.');
 
-        $this->info("Token #{$token->id} «{$token->nombre}» creado (solo lectura).");
-        $this->line('Cópielo ahora y péguelo en la app (Configuración → Token). No se volverá a mostrar:');
+            return self::FAILURE;
+        }
+        [$token, $claro] = PuenteToken::emitir(mb_substr($this->argument('nombre'), 0, 120), $dias ? (int) $dias : null, $cobertura);
+
+        $this->info("Token #{$token->id} «{$token->nombre}» creado (solo lectura, cobertura: {$cobertura}).");
+        $this->line('Cobertura: '.config("api_tokens.coberturas.{$cobertura}.nombre"));
+        $this->line('Cópielo ahora y guárdelo en el cliente (app, Unity…). No se volverá a mostrar:');
         $this->newLine();
         $this->line($claro);
         $this->newLine();
         $this->line($token->expira_en ? 'Vence: '.$token->expira_en->toDateTimeString() : 'Sin vencimiento. Revóquelo con: php artisan puente:token-revocar '.$token->id);
+        $this->line('Antes de compartir esta pantalla, ejecute «clear».');
 
         return self::SUCCESS;
     }

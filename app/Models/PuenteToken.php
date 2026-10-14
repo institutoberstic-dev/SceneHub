@@ -4,11 +4,18 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use InvalidArgumentException;
 
-/** Token de solo lectura para la app «Puente de datos». Solo se guarda su SHA-256. */
+/**
+ * Token de solo lectura para la API. Solo se guarda su SHA-256.
+ * Cada token pertenece a una cobertura (config/api_tokens.php): puente, simulacion o emociones.
+ */
 class PuenteToken extends Model
 {
     public const PREFIJO = 'puente_';
+
+    /** Valor que guardaban los primeros tokens de la app (equivale a la cobertura «puente»). */
+    private const ALCANCE_HISTORICO = 'lectura';
 
     protected $table = 'puente_tokens';
 
@@ -26,18 +33,42 @@ class PuenteToken extends Model
         return hash('sha256', $token);
     }
 
-    /** Crea un token nuevo y devuelve [modelo, token en claro]. El token en claro no se guarda. */
-    public static function emitir(string $nombre, ?int $dias = null): array
+    /** @return list<string> Coberturas definidas en config/api_tokens.php. */
+    public static function coberturas(): array
     {
+        return array_keys(config('api_tokens.coberturas', []));
+    }
+
+    /**
+     * Crea un token nuevo y devuelve [modelo, token en claro]. El token en claro no se guarda.
+     *
+     * @throws InvalidArgumentException si la cobertura no existe.
+     */
+    public static function emitir(string $nombre, ?int $dias = null, string $cobertura = 'puente'): array
+    {
+        if (! in_array($cobertura, self::coberturas(), true)) {
+            throw new InvalidArgumentException("Cobertura desconocida: {$cobertura}");
+        }
         $claro = self::PREFIJO.bin2hex(random_bytes(32));
         $token = self::create([
             'nombre' => $nombre,
             'token_hash' => self::hash($claro),
-            'alcance' => 'lectura',
+            'alcance' => $cobertura,
             'expira_en' => $dias ? now()->addDays($dias) : null,
         ]);
 
         return [$token, $claro];
+    }
+
+    /** Cobertura del token; los tokens históricos («lectura») son de la cobertura «puente». */
+    public function cobertura(): string
+    {
+        return $this->alcance === self::ALCANCE_HISTORICO ? 'puente' : (string) $this->alcance;
+    }
+
+    public function cubre(string $cobertura): bool
+    {
+        return $this->cobertura() === $cobertura;
     }
 
     public function scopeVigentes(Builder $query): Builder
