@@ -18,6 +18,32 @@ Las rutas públicas actuales están en `routes/api.php`:
 
 Las APIs externas son de solo lectura, salvo `POST /api/unity/imagenes`, que solo guarda imágenes en el almacenamiento y no modifica resultados de simulación, datos emocionales ni escenarios. Las cargas de resultados y emocionales requieren sesión y permisos dentro del proyecto. El módulo Emociones guarda los archivos mediante la ruta privada `POST /emociones-data`; esta operación no se expone bajo `/api`. Usuarios y roles se consultan internamente mediante `/users-data` y `/roles-data`, con sesión y rol administrador; `/session-user` requiere sesión.
 
+## Token de acceso (cobertura)
+
+Las rutas de esta guía se agrupan en dos **coberturas** de token de solo lectura (`config/api_tokens.php`):
+
+| Cobertura | Rutas |
+| --- | --- |
+| `simulacion` | `/api/escenarios`, `/api/escenarios/{id}` y todas sus subrutas (`versiones-datos`, `simulacion`, `solar`, `resultados*`), `/api/tecnologias` |
+| `emociones` | `/api/emociones`, `/api/emociones/{meeting}` |
+
+`POST /api/unity/imagenes` no cambia: sigue libre, con el límite de 30 solicitudes por minuto.
+
+Cada cobertura tiene un modo en el `.env` del servidor (`API_TOKEN_SIMULACION`, `API_TOKEN_EMOCIONES`):
+
+- **`opcional`** (por defecto): las rutas responden sin token, igual que siempre. Si la solicitud trae token, el servidor lo valida (inválido, vencido o revocado: `401`; token de otra cobertura: `403`). Así cada cliente puede probar su token antes de que sea obligatorio.
+- **`obligatorio`**: sin un token válido de esa cobertura responde `401` con `{"message": "Token no válido, vencido o revocado."}`, incluso si el escenario no existe.
+
+El administrador crea el token por SSH: `php artisan puente:token-crear "Unity gemelo" --alcance=simulacion --dias=365`. Se muestra una sola vez. El cliente lo envía en cada solicitud GET:
+
+```csharp
+req.SetRequestHeader("Authorization", "Bearer " + token);
+```
+
+Cualquier método distinto de GET con token responde `405`. La `url_datos` del manifiesto es relativa: se descarga con el mismo token.
+
+**Límite de seguridad:** un token incluido dentro de una compilación de Unity que se reparte al público puede extraerse del ejecutable. Aun así sirve para revocarlo (`puente:token-revocar`), cambiarlo y ver su «Último uso» (`puente:token-listar`). Para que sea un secreto real, la compilación no debe distribuirse públicamente o cada instalación debe recibir su propio token.
+
 ## Consultar si hay novedades
 
 `GET /api/escenarios/ID/versiones-datos?tipo=simulacion`

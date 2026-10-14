@@ -24,3 +24,17 @@ Implementado en la rama `feature/territorio-api-token` (14-oct-2026). Código: `
 | `GET /territorio/archivos/{id}` | Descarga del archivo (cabecera `X-Content-SHA256`). 404 si pertenece a un paquete no publicado |
 
 La app de escritorio (`D:\Backups\PuentePython`) ya implementa este contrato (`motor/cliente_api.py`) y sus datos de prueba siguen el mismo formato.
+
+## Coberturas de token (14-oct-2026)
+
+El mismo tipo de token protege tres coberturas, definidas en `config/api_tokens.php`. Un token sirve solo para su cobertura; si se usa en otra, la respuesta es **403**.
+
+| Cobertura | Rutas | Modo |
+|---|---|---|
+| `puente` | `/api/puente/v1/*` (este contrato) | Siempre obligatorio |
+| `simulacion` | `/api/escenarios*` y `/api/tecnologias` (Unity, ver `docs/unity-data-api.md`) | `API_TOKEN_SIMULACION`: `opcional` por defecto u `obligatorio` |
+| `emociones` | `/api/emociones*` | `API_TOKEN_EMOCIONES`: `opcional` por defecto u `obligatorio` |
+
+- **Crear:** `php artisan puente:token-crear "<nombre>" --alcance=puente|simulacion|emociones [--dias=N]`. Si no se indica, el alcance es `puente`.
+- **Listar:** `puente:token-listar` muestra la cobertura de cada token y el modo vigente de cada cobertura.
+- Los tokens creados antes de este cambio (alcance `lectura`) siguen valiendo para `puente`.

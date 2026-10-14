@@ -12,6 +12,7 @@ Actualizado: 14-oct-2026. El integrador aprobó avanzar con el **sistema territo
 | 6 | Módulo territorial | **Hecho:** rama `feature/territorio-api-token` | — |
 | 7 | API de solo lectura con token | **Hecho:** misma rama | — |
 | 8 | Ubicación de escenarios en la malla | Solo evaluado (P-18) | Paquete real del PT1 |
+| 9 | Token por cobertura en las rutas públicas (simulación y emociones) | **Hecho:** rama `feature/api-token-coberturas`, modo opcional por defecto | Activar «obligatorio» cuando Unity y el cliente de emociones envíen el token |
 
 ## Ajuste 6 · Sistema territorial
 
@@ -58,3 +59,23 @@ Actualizado: 14-oct-2026. El integrador aprobó avanzar con el **sistema territo
 | `node --test tests/*.test.mjs` | 13/13 | 13/13 |
 | Sintaxis de las vistas nuevas (TypeScript, solo análisis) | — | Sin errores |
 | `npm run build` | — | **Pendiente en el PC** (aquí no hay registro npm) |
+
+## Ajuste 9 · Token por cobertura en las rutas públicas
+
+- **Pedido del integrador (14-oct):** que las rutas públicas de emociones y de resultados de simulación también puedan protegerse con token, igual que el Puente de datos.
+- **Diseño:**
+  - `config/api_tokens.php` define tres coberturas: `puente` (siempre obligatoria), `simulacion` y `emociones`.
+  - Se reutiliza la misma tabla `puente_tokens`: la columna `alcance` guarda la cobertura (los tokens `lectura` antiguos valen para `puente`). No hay migración nueva.
+  - El mismo middleware atiende los alias `puente.token` y `api.token:<cobertura>`. Se ejecuta antes de resolver el escenario: sin token responde 401, no 404.
+  - `puente:token-crear` recibe `--alcance=`; `puente:token-listar` muestra la cobertura de cada token y el modo de cada cobertura.
+- **Modo opcional por defecto:** sin token responde igual que antes, así que no se rompe Unity, que no se puede modificar (P-01). Si llega un token, se valida.
+- **Consumidores afectados:**
+  - en modo opcional, ninguno;
+  - en modo obligatorio, Unity y cualquier cliente externo de emociones;
+  - la web no se afecta, porque usa rutas propias con sesión (`/escenarios-data`, `/emociones-data`).
+- **Pruebas:** `tests/Feature/ApiTokenCoberturaTest.php` (8 pruebas): modo opcional sin cambios; validación del token cuando se envía; los dos modos obligatorios en todas sus rutas; cobertura cruzada (403); un modo desconocido se trata como obligatorio; Puente siempre obligatorio y con tokens antiguos válidos; carga de imágenes de Unity sin cambios; comandos.
+  - Suite completa: 90 pasan y fallan las mismas 10 de antes (emociones). Pint sin observaciones.
+  - Comprobado también con `route:cache` y `config:cache`.
+- **Reversa:**
+  - inmediata: `API_TOKEN_*=opcional` y `php artisan config:cache`;
+  - total: revertir la rama, sin migraciones.
