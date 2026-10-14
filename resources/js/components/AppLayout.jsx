@@ -5,6 +5,7 @@ import {
     FolderOpen,
     Home,
     LogOut,
+    MapPinned,
     Menu,
     Search,
     ShieldCheck,
@@ -22,6 +23,7 @@ const mainNavigation = [
     { label: 'Escenarios', path: '/escenarios', icon: FolderOpen, permission: 'escenarios.leer' },
     { label: 'Resultados', path: '/resultados', icon: BarChart3, permission: 'escenarios.leer' },
     { label: 'Emociones', path: '/emociones', faIcon: 'fa-face-smile-beam', permission: 'emociones.leer' },
+    { label: 'Territorio', path: '/territorio', icon: MapPinned, permission: 'territorio.ver' },
 ];
 
 const adminNavigation = [
@@ -34,6 +36,7 @@ const pageMeta = {
     '/escenarios': ['Escenarios', 'Carga y administración'],
     '/resultados': ['Resultados', 'Exposición por documento'],
     '/emociones': ['Emociones', 'Catálogo emocional'],
+    '/territorio': ['Territorio', 'Paquetes del PT1'],
     '/users-list': ['Administración', 'Usuarios'],
     '/users-create': ['Administración', 'Usuarios'],
     '/roles-list': ['Administración', 'Roles'],
@@ -57,7 +60,9 @@ export default function AppLayout({ children }) {
     const navigate = useNavigate();
     const meta = location.pathname.startsWith('/emociones/')
         ? ['Emociones', 'Contenido de la sesión']
-        : pageMeta[location.pathname] || ['SceneHub', 'Módulo'];
+        : location.pathname.startsWith('/territorio/')
+            ? ['Territorio', 'Detalle del paquete']
+            : pageMeta[location.pathname] || ['SceneHub', 'Módulo'];
     const [user, setUser] = useState(storedUser);
     const isAdmin = user?.roles?.includes('admin');
     const canAccess = (permission) => !permission || isAdmin || user?.permissions?.includes(permission);

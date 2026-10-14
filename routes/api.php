@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\PuenteController;
 use App\Http\Controllers\DataVersionsController;
 use App\Http\Controllers\EmocionesController;
 use App\Http\Controllers\EscenariosController;
@@ -24,3 +25,14 @@ Route::get('/escenarios', [EscenariosController::class, 'data'])->name('escenari
 // Public upload API for Unity: no authentication or CSRF. Stores images in
 // storage/app/public/unity/{escenario_id|general}/{YYYY-MM-DD}. Limited to 30 requests per minute per IP.
 Route::post('/unity/imagenes', [UnityImagenesController::class, 'store'])->middleware('throttle:30,1')->name('unity.imagenes.store');
+
+// API de SOLO LECTURA para la app de escritorio «Puente de datos». Exige token
+// (php artisan puente:token-crear). No modifica ni reemplaza las rutas públicas de arriba.
+Route::prefix('puente/v1')->middleware(['puente.token', 'throttle:120,1'])->name('puente.')->group(function () {
+    Route::get('/estado', [PuenteController::class, 'estado'])->name('estado');
+    Route::get('/catalogo-variables', [PuenteController::class, 'catalogoVariables'])->name('catalogo');
+    Route::get('/escenarios', [PuenteController::class, 'escenarios'])->name('escenarios');
+    Route::get('/escenarios/{escenario}/versiones/{version}/archivo', [PuenteController::class, 'archivoVersion'])->whereNumber('escenario')->name('escenarios.archivo');
+    Route::get('/territorio/paquetes', [PuenteController::class, 'paquetesTerritoriales'])->name('territorio.paquetes');
+    Route::get('/territorio/archivos/{archivo}', [PuenteController::class, 'archivoTerritorial'])->whereNumber('archivo')->name('territorio.archivo');
+});
