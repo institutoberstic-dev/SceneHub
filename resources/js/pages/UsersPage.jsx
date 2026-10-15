@@ -1,4 +1,4 @@
-import { Ban, CalendarDays, CheckCircle2, FolderOpen, Info, Mail, MapPinned, Pencil, Plus, Search, Shield, ShieldCheck, Smile, UserRound, Users } from 'lucide-react';
+import { Ban, CalendarDays, CheckCircle2, Download, FolderOpen, Info, Mail, MapPinned, Pencil, Plus, Search, Shield, ShieldCheck, Smile, UserRound, UploadCloud, Users } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Modal from '../components/Modal';
 import Pagination from '../components/Pagination.jsx';
@@ -18,6 +18,8 @@ const moduleOptions = [
     { value: 'emociones', title: 'Emociones', description: 'Webinars y resultados emocionales', icon: Smile },
     { value: 'territorio', title: 'Territorio', description: 'Subir y validar paquetes del PT1', icon: MapPinned },
     { value: 'territorio_publicacion', title: 'Publicar territorio', description: 'Revisar, publicar y retirar paquetes del PT1', icon: ShieldCheck },
+    { value: 'puente', title: 'Puente de datos', description: 'Descargar la app de escritorio', icon: Download },
+    { value: 'puente_publicacion', title: 'Publicar app Puente', description: 'Subir y retirar versiones del instalador', icon: UploadCloud },
 ];
 
 export default function UsersPage({ createOnLoad = false }) {

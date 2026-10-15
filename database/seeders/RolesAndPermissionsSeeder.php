@@ -24,6 +24,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'archivos.leer', 'archivos.actualizar',
             'emociones.leer', 'emociones.cargar', 'emociones.invitar',
             'territorio.ver', 'territorio.subir', 'territorio.publicar',
+            'puente.descargar', 'puente.publicar',
         ])->mapWithKeys(
             fn (string $name) => [
                 $name => Permission::findOrCreate($name, 'web'),

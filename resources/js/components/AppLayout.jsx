@@ -2,6 +2,7 @@ import {
     BarChart3,
     Bell,
     Boxes,
+    Download,
     FolderOpen,
     Home,
     LogOut,
@@ -24,6 +25,7 @@ const mainNavigation = [
     { label: 'Resultados', path: '/resultados', icon: BarChart3, permission: 'escenarios.leer' },
     { label: 'Emociones', path: '/emociones', faIcon: 'fa-face-smile-beam', permission: 'emociones.leer' },
     { label: 'Territorio', path: '/territorio', icon: MapPinned, permission: 'territorio.ver' },
+    { label: 'Puente de datos', path: '/puente-app', icon: Download, permission: 'puente.descargar' },
 ];
 
 const adminNavigation = [
@@ -37,6 +39,7 @@ const pageMeta = {
     '/resultados': ['Resultados', 'Exposición por documento'],
     '/emociones': ['Emociones', 'Catálogo emocional'],
     '/territorio': ['Territorio', 'Paquetes del PT1'],
+    '/puente-app': ['Puente de datos', 'App de escritorio'],
     '/users-list': ['Administración', 'Usuarios'],
     '/users-create': ['Administración', 'Usuarios'],
     '/roles-list': ['Administración', 'Roles'],

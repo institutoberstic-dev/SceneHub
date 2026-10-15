@@ -6,6 +6,7 @@ use App\Http\Controllers\EscenariosController;
 use App\Http\Controllers\LoginController;
 use App\Http\Controllers\PasswordResetController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\PuenteAppController;
 use App\Http\Controllers\ResultadosController;
 use App\Http\Controllers\RolesController;
 use App\Http\Controllers\TecnologiasController;
@@ -83,6 +84,17 @@ Route::middleware(['auth', 'active'])->group(function () {
         Route::post('/territorio-paquetes/{paquete}/validaciones/{validacion}/confirmar', [TerritorioController::class, 'confirmar'])->whereNumber(['paquete', 'validacion'])->name('territorio.confirmar');
         Route::post('/territorio-paquetes/{paquete}/publicar', [TerritorioController::class, 'publicar'])->whereNumber('paquete')->name('territorio.publicar');
         Route::post('/territorio-paquetes/{paquete}/retirar', [TerritorioController::class, 'retirar'])->whereNumber('paquete')->name('territorio.retirar');
+    });
+
+    // App de escritorio «Puente de datos»: descarga (puente.descargar) y publicación de versiones (puente.publicar).
+    Route::middleware('permission:puente.descargar|puente.publicar')->group(function () {
+        Route::get('/puente-app', [PuenteAppController::class, 'index'])->name('puente_app.index');
+        Route::get('/puente-app-data', [PuenteAppController::class, 'data'])->name('puente_app.data');
+        Route::get('/puente-app/versiones/{puenteVersion}/descargar', [PuenteAppController::class, 'descargar'])->whereNumber('puenteVersion')->name('puente_app.descargar');
+    });
+    Route::middleware('permission:puente.publicar')->group(function () {
+        Route::post('/puente-app/versiones', [PuenteAppController::class, 'store'])->name('puente_app.store');
+        Route::post('/puente-app/versiones/{puenteVersion}/retirar', [PuenteAppController::class, 'retirar'])->whereNumber('puenteVersion')->name('puente_app.retirar');
     });
 
     Route::middleware('role:admin')->group(function () {

@@ -20,6 +20,9 @@ class UserController extends Controller
         'territorio' => ['territorio.ver', 'territorio.subir'],
         // Revisión humana: confirmar advertencias, publicar y retirar. El primer permiso identifica el módulo.
         'territorio_publicacion' => ['territorio.publicar', 'territorio.ver'],
+        // App de escritorio «Puente de datos»: descargar el instalador / publicar versiones nuevas.
+        'puente' => ['puente.descargar'],
+        'puente_publicacion' => ['puente.publicar', 'puente.descargar'],
     ];
 
     public function data()

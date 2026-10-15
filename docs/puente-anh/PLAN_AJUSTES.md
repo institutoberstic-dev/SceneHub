@@ -13,6 +13,7 @@ Actualizado: 14-oct-2026. El integrador aprobó avanzar con el **sistema territo
 | 7 | API de solo lectura con token | **Hecho:** misma rama | — |
 | 8 | Ubicación de escenarios en la malla | Solo evaluado (P-18) | Paquete real del PT1 |
 | 9 | Token por cobertura: en las rutas públicas (simulación y emociones) y un token propio de territorio | **Hecho:** rama `feature/api-token-coberturas`, modo opcional por defecto | Activar «obligatorio» cuando Unity y el cliente de emociones envíen el token |
+| 10 | Descarga de la app «Puente de datos» desde SceneHub | **Hecho:** pantalla «Puente de datos», permisos `puente.descargar` y `puente.publicar` | — |
 
 ## Ajuste 6 · Sistema territorial
 
@@ -103,3 +104,26 @@ Actualizado: 14-oct-2026. El integrador aprobó avanzar con el **sistema territo
   - SceneHub: 93 pasan y fallan las mismas 10 de antes. Pint sin observaciones.
   - App: 28 pasan. También se probó contra SceneHub en local, incluida la conversión del prefijo antiguo.
 - **Reversa:** revertir la rama (sin migraciones).
+
+## Ajuste 10 · Descarga de la app «Puente de datos» desde SceneHub (14-oct, noche)
+
+- **Pedido del integrador:** que el instalador del Puente se descargue desde SceneHub, para instalar y operar sin pasos técnicos.
+- **Diseño:**
+  - Tabla `puente_versiones`: versión, tipo instalador/portable, notas, SHA-256, descargas y retiro.
+  - Disco privado.
+  - Permisos `puente.descargar` y `puente.publicar`, que en Usuarios aparecen como los módulos «Puente de datos» y «Publicar app Puente».
+  - Pantalla `/puente-app`:
+    - versión vigente con botón de descarga y huella SHA-256 con el comando para verificarla;
+    - pasos de instalación con la dirección de SceneHub lista para copiar;
+    - formulario para publicar y tabla con descargas y retiro.
+- **Validaciones al publicar:**
+  - formato de versión `1.0.0`, única por tipo;
+  - extensión y **firma real** (`MZ` para `.exe`, OLE para `.msi`, `PK` para `.zip`);
+  - tamaño máximo `PUENTE_APP_MAX_MB`.
+- **Retiro:** una versión retirada deja de verse para descargar, pero queda en el historial (con su archivo) para quien publica.
+- **App de Python:** `scripts/empaquetar.ps1` (PyInstaller + Inno Setup) genera el instalador por usuario y `SHA256.txt`.
+- **Pruebas:**
+  - `tests/Feature/PuenteAppDescargaTest.php` (4 pruebas: permisos, flujo completo, validaciones y módulo desde Usuarios).
+  - `tests/puenteApp.test.mjs` (4).
+  - Suite: 97 pasan y fallan las mismas 10 de antes. Pint sin observaciones.
+- **Reversa:** `migrate:rollback --step=1` y revertir la rama.

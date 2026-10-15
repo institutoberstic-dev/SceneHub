@@ -646,3 +646,36 @@ button { cursor: pointer; }
 .validation-item--error { background: #fff8f7; }
 .validation-item__text { flex: 1; display: grid; gap: 2px; }
 .validation-item__text small { color: #98a2b3; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 10px; }
+
+/* Puente de datos: descarga de la app de escritorio */
+.puente-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+.puente-release { display: grid; gap: 12px; padding: 18px; align-content: start; }
+.puente-release header { display: flex; align-items: center; gap: 12px; }
+.puente-release header > div { flex: 1; min-width: 0; }
+.puente-release header small { color: var(--muted); font-size: 11px; }
+.puente-release h2 { margin: 2px 0 0; font-size: 20px; letter-spacing: -.02em; }
+.puente-release__icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 11px; background: #eaf2ff; color: #145bbd; flex: 0 0 auto; }
+.puente-release__datos { display: flex; gap: 22px; margin: 0; }
+.puente-release__datos div { display: grid; gap: 2px; }
+.puente-release__datos dt { color: var(--muted); font-size: 11px; }
+.puente-release__datos dd { margin: 0; font-weight: 600; font-size: 13px; }
+.puente-release__notas { margin: 0; color: #475467; font-size: 13px; white-space: pre-line; }
+.puente-release__descargar { justify-content: center; text-decoration: none; overflow-wrap: anywhere; }
+.puente-release__hash { font-size: 12px; color: #475467; }
+.puente-release__hash summary { display: flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 600; }
+.puente-release__hash code, .puente-pasos code, .puente-publicar code { display: inline-block; max-width: 100%; padding: 2px 6px; border-radius: 4px; background: #f0f3f8; color: #344054; font-size: 11px; overflow-wrap: anywhere; }
+.puente-release__hash > code { display: block; margin: 8px 0; }
+.puente-release--vacia { justify-items: center; text-align: center; color: var(--muted); padding: 34px 18px; }
+.puente-pasos, .puente-publicar { padding: 20px 22px; display: grid; gap: 12px; }
+.puente-pasos h2, .puente-publicar h2 { margin: 0; font-size: 17px; }
+.puente-publicar > p { margin: 0; color: var(--muted); font-size: 13px; }
+.puente-publicar form { display: grid; gap: 10px; }
+.puente-pasos ol { margin: 0; padding-left: 20px; display: grid; gap: 12px; font-size: 13px; color: #344054; }
+.puente-pasos li small { display: block; margin-top: 4px; color: var(--muted); }
+.puente-pasos__nota { display: flex; gap: 8px; align-items: flex-start; margin: 0; padding: 10px 12px; border-radius: 9px; background: #f6f8fb; color: #475467; font-size: 12px; }
+.puente-valor { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+.puente-copy { padding: 4px 9px; font-size: 12px; }
+.puente-fecha { display: block; color: var(--muted); font-size: 11px; }
+.puente-acciones { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+.puente-acciones .secondary-button { padding: 5px 10px; font-size: 12px; text-decoration: none; }
+

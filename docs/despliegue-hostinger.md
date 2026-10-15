@@ -124,3 +124,24 @@ Las rutas anteriores responden 404.
 2. **En el mismo momento**, actualizar la app «Puente de datos» del PC. Si la app tiene guardado el prefijo antiguo, lo convierte sola. Los tokens existentes siguen sirviendo.
 
 Comandos de tokens: ver la tabla «Comandos» en `docs/puente-anh/CONTRATO_API.md`. Para eliminarlos de forma definitiva: `php artisan puente:token-eliminar <id>`, o `--revocados` para limpiar los revocados y vencidos.
+
+## Descarga de la app «Puente de datos» desde SceneHub (octubre 2026)
+
+Hay una migración nueva y aditiva: `2026_10_14_120000_create_puente_versiones_table`, que crea la tabla `puente_versiones`. Hay también dos permisos nuevos: `puente.descargar` y `puente.publicar`.
+
+```sh
+php artisan migrate --force
+php artisan db:seed --class=RolesAndPermissionsSeeder --force
+php artisan optimize:clear && php artisan config:cache && php artisan route:cache
+```
+
+Después hay que **subir `public/build`** (hay pantalla nueva) y asignar los módulos en **Usuarios**:
+- «Puente de datos»: ver y descargar el instalador.
+- «Publicar app Puente»: subir y retirar versiones.
+
+El administrador ya tiene ambos permisos.
+
+- **Dónde quedan los archivos:** en `storage/app/private/puente-app/<versión>/` (disco privado). Solo se descargan con sesión y permiso.
+- **Tamaño:** el instalador pesa del orden de 60 a 150 MB. Hay que revisar `upload_max_filesize` y `post_max_size` en hPanel (300M) y, si se quiere otro límite, `PUENTE_APP_MAX_MB` en `.env`.
+- **Espacio en disco:** las versiones retiradas conservan su archivo. Si se necesita espacio, se borra a mano la carpeta de una versión retirada.
+- **Reversa:** `php artisan migrate:rollback --step=1 --force` elimina la tabla. Los archivos se borran a mano en `storage/app/private/puente-app/`.

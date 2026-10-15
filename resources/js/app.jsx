@@ -9,6 +9,7 @@ import EmotionDetailPage from './pages/EmotionDetailPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import LoginPage from './pages/LoginPage';
 import ProfilePage from './pages/ProfilePage';
+import PuenteAppPage from './pages/PuenteAppPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import ResultsPage from './pages/ResultsPage';
 import RolesPage from './pages/RolesPage';
@@ -44,6 +45,7 @@ function App() {
                 <Route path="/resultados" element={<PermissionRoute permission="escenarios.leer"><ShellRoute><ResultsPage /></ShellRoute></PermissionRoute>} />
                 <Route path="/territorio" element={<PermissionRoute permission="territorio.ver"><ShellRoute><TerritoryPage /></ShellRoute></PermissionRoute>} />
                 <Route path="/territorio/:id" element={<PermissionRoute permission="territorio.ver"><ShellRoute><TerritoryDetailPage /></ShellRoute></PermissionRoute>} />
+                <Route path="/puente-app" element={<PermissionRoute permission="puente.descargar"><ShellRoute><PuenteAppPage /></ShellRoute></PermissionRoute>} />
                 <Route path="/emociones" element={<PermissionRoute permission="emociones.leer"><ShellRoute><EmotionsPage /></ShellRoute></PermissionRoute>} />
                 <Route path="/emociones/:id" element={<PermissionRoute permission="emociones.leer"><ShellRoute><EmotionDetailPage /></ShellRoute></PermissionRoute>} />
                 <Route path="/users-list" element={<ShellRoute><UsersPage /></ShellRoute>} />
