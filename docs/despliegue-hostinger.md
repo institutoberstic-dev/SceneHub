@@ -145,3 +145,20 @@ El administrador ya tiene ambos permisos.
 - **Tamaño:** el instalador pesa del orden de 60 a 150 MB. Hay que revisar `upload_max_filesize` y `post_max_size` en hPanel (300M) y, si se quiere otro límite, `PUENTE_APP_MAX_MB` en `.env`.
 - **Espacio en disco:** las versiones retiradas conservan su archivo. Si se necesita espacio, se borra a mano la carpeta de una versión retirada.
 - **Reversa:** `php artisan migrate:rollback --step=1 --force` elimina la tabla. Los archivos se borran a mano en `storage/app/private/puente-app/`.
+
+## Token para el catálogo de webinars de Berstic Live (octubre 2026)
+
+Berstic Live también protege su API con token. SceneHub le pide la lista de webinars (títulos y fechas del módulo Emociones) a `https://bersticlive.org/api/meetings`. Ahora puede enviar ese token como `Authorization: Bearer`.
+
+El token **lo entrega Berstic Live** y va solo en el `.env` de SceneHub, nunca en el código ni en la base de datos:
+
+```sh
+nano .env
+# BERSTICLIVE_API_URL=https://bersticlive.org/api/meetings   (opcional; este es el valor por defecto)
+# BERSTICLIVE_API_TOKEN=<token que entrega Berstic Live>
+php artisan config:cache
+```
+
+- **Si falta el token o Berstic Live lo rechaza:** la página Emociones sigue funcionando con los webinars que ya tienen datos guardados, pero sin su título original. El administrador ve un aviso que explica qué revisar; los demás ven un aviso general. El token nunca se muestra en pantalla ni en las respuestas.
+- **Sin cambios en la base de datos ni en la API pública de SceneHub.**
+- **Comprobación:** con el token puesto, la página Emociones muestra los títulos reales de los webinars y no aparece el aviso amarillo.

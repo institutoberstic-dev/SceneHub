@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\User;
 use App\Services\ScenarioEmotionImport;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -14,6 +15,9 @@ use Illuminate\Validation\Rule;
 
 class EmocionesController extends Controller
 {
+    /** Motivo por el que no se pudo leer el catálogo de Berstic Live en esta petición (null si se leyó). */
+    private ?string $avisoCatalogo = null;
+
     public function index()
     {
         return view('app');
@@ -29,12 +33,37 @@ class EmocionesController extends Controller
             }
         }
 
-        return response()->json(['meetings' => $meetings->values()]);
+        return response()->json([
+            'meetings' => $meetings->values(),
+            'aviso_catalogo' => $this->avisoCatalogo === null ? null : $this->textoAviso($request),
+        ]);
     }
 
+    /** Pide el catálogo de webinars a Berstic Live, con su token si está configurado en el .env. */
     public function meetingsBL()
     {
-        return Http::timeout(15)->get('https://bersticlive.org/api/meetings')->throw()->json();
+        $config = config('services.bersticlive');
+        $peticion = Http::timeout($config['timeout'] ?? 15)->acceptJson();
+        if (! empty($config['token'])) {
+            $peticion = $peticion->withToken($config['token']);
+        }
+
+        return $peticion->get($config['url'])->throw()->json();
+    }
+
+    private function textoAviso(Request $request): string
+    {
+        $esAdministrador = (bool) $request->user()?->hasRole('admin');
+        $generico = 'No se pudo consultar el catálogo de webinars de Berstic Live: se muestran solo los webinars con datos guardados, sin su título original.';
+        if (! $esAdministrador) {
+            return $generico;
+        }
+
+        return match ($this->avisoCatalogo) {
+            'sin_token' => 'Berstic Live pide un token para listar los webinars. Configure BERSTICLIVE_API_TOKEN en el .env de SceneHub y ejecute php artisan config:cache.',
+            'token_rechazado' => 'Berstic Live rechazó el token configurado (BERSTICLIVE_API_TOKEN). Revise que esté vigente y tenga acceso a los webinars, y ejecute php artisan config:cache.',
+            default => $generico,
+        };
     }
 
     public function detail(Request $request, int $meeting): JsonResponse
@@ -145,7 +174,15 @@ class EmocionesController extends Controller
     {
         try {
             $remote = $this->meetingsBL();
+        } catch (RequestException $exception) {
+            $estado = $exception->response->status();
+            $this->avisoCatalogo = in_array($estado, [401, 403], true)
+                ? (empty(config('services.bersticlive.token')) ? 'sin_token' : 'token_rechazado')
+                : 'no_disponible';
+            report($exception);
+            $remote = ['meetings' => []];
         } catch (\Throwable $exception) {
+            $this->avisoCatalogo = 'no_disponible';
             report($exception);
             $remote = ['meetings' => []];
         }

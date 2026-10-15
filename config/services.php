@@ -35,6 +35,14 @@ return [
         ],
     ],
 
+    // Catálogo de webinars de Berstic Live (títulos y fechas del módulo Emociones).
+    // El token va SOLO en el .env (BERSTICLIVE_API_TOKEN) y se envía como «Authorization: Bearer».
+    'bersticlive' => [
+        'url' => env('BERSTICLIVE_API_URL', 'https://bersticlive.org/api/meetings'),
+        'token' => env('BERSTICLIVE_API_TOKEN'),
+        'timeout' => (int) env('BERSTICLIVE_API_TIMEOUT', 15),
+    ],
+
     'firebase' => [
         'credentials' => [
             'file' => base_path(env('FIREBASE_CREDENTIALS')),

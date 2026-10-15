@@ -22,6 +22,7 @@ export default function EmotionsPage() {
     const [meetings, setMeetings] = useState([]);
     const [loading, setLoading] = useState(true);
     const [failure, setFailure] = useState('');
+    const [catalogWarning, setCatalogWarning] = useState('');
     const [file, setFile] = useState(null);
     const [uploading, setUploading] = useState(false);
     const [message, setMessage] = useState('');
@@ -32,7 +33,10 @@ export default function EmotionsPage() {
 
     useEffect(() => {
         api.get('/emociones-data')
-            .then(({ data }) => setMeetings(Array.isArray(data?.meetings) ? data.meetings : []))
+            .then(({ data }) => {
+                setMeetings(Array.isArray(data?.meetings) ? data.meetings : []);
+                setCatalogWarning(typeof data?.aviso_catalogo === 'string' ? data.aviso_catalogo : '');
+            })
             .catch((error) => setFailure(errorMessage(error, 'No fue posible consultar las emociones.')))
             .finally(() => setLoading(false));
     }, [reload]);
@@ -70,6 +74,7 @@ export default function EmotionsPage() {
             </section>
 
             {failure && <div className="alert alert--error" role="alert">{failure}</div>}
+            {!failure && catalogWarning && <div className="alert alert--warning" role="status"><Info size={18} aria-hidden="true" /><span>{catalogWarning}</span></div>}
             {message && <div className="alert alert--success" role="status">{message}</div>}
 
             {canUpload && <section className="content-card emotion-upload-card" aria-labelledby="emotion-upload-title">
