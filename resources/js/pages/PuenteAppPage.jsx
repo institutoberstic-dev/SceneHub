@@ -154,7 +154,7 @@ export default function PuenteAppPage() {
             {data.puede_publicar && (
                 <section className="content-card puente-publicar">
                     <h2>Publicar una versión</h2>
-                    <p>Suba el instalador generado con <code>scripts\empaquetar.ps1</code> en el repositorio PuentePython (queda en <code>dist\entrega\</code>). Máximo {data.max_mb} MB.</p>
+                    <p>Suba el instalador del release de GitHub del repositorio PuentePython (sale al subir una etiqueta <code>vX.Y.Z</code>) o el generado a mano con <code>scripts\empaquetar.ps1</code> (queda en <code>dist\entrega\</code>). Máximo {data.max_mb} MB.</p>
                     <form onSubmit={publicar}>
                         <label
                             className={`upload-zone${arrastrando ? ' upload-zone--active' : ''}`}
