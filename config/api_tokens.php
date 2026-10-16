@@ -13,6 +13,9 @@
 |                  para ver en «Último uso» quién ya lo envía.
 |   - obligatorio: sin token válido de esa cobertura → 401.
 | «puente» y «territorio» son siempre obligatorias (nunca tuvieron versión pública).
+| «capturas» es la única cobertura que admite escritura: solo sirve para POST /api/unity/imagenes.
+| «unity» es un token único para la app Unity: vale en simulación, emociones y capturas, con el
+| modo que tenga cada una de esas coberturas (no tiene modo propio).
 | Cualquier otro valor se trata como «obligatorio» (falla cerrada).
 | GET /api/puente/estado acepta un token vigente de cualquier cobertura (para «Probar conexión»).
 | Tras cambiar el .env en producción: php artisan config:cache
@@ -35,6 +38,15 @@ return [
         'emociones' => [
             'nombre' => 'Datos emocionales por webinar: /api/emociones*',
             'modo' => env('API_TOKEN_EMOCIONES', 'opcional'),
+        ],
+        'capturas' => [
+            'nombre' => 'Carga de capturas desde Unity: POST /api/unity/imagenes (única cobertura con escritura)',
+            'modo' => env('API_TOKEN_CAPTURAS', 'opcional'),
+            'escritura' => true,
+        ],
+        'unity' => [
+            'nombre' => 'App Unity (un solo token): simulación, emociones y capturas, con el modo de cada una',
+            'modo' => null,
         ],
     ],
 ];

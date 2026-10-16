@@ -92,16 +92,19 @@ Las rutas públicas de `/api` quedan en dos coberturas: **simulacion** (`/api/es
 ```sh
 API_TOKEN_SIMULACION=opcional
 API_TOKEN_EMOCIONES=opcional
+API_TOKEN_CAPTURAS=opcional
 ```
+
+`API_TOKEN_CAPTURAS` protege `POST /api/unity/imagenes` (carga de capturas desde Unity). Para la app Unity conviene un solo token de la cobertura `unity`, que vale en escenarios, emociones y capturas: `php artisan puente:token-crear "Unity gemelo" --alcance=unity --dias=365`.
 
 Para activar la protección de una cobertura:
 
-1. Crear un token por cliente: `php artisan puente:token-crear "Unity gemelo" --alcance=simulacion --dias=365` (o `--alcance=emociones`).
+1. Crear un token por cliente: `php artisan puente:token-crear "Unity gemelo" --alcance=unity --dias=365` (o una cobertura sola: `simulacion`, `emociones` o `capturas`).
 2. Configurar el cliente para que envíe `Authorization: Bearer <token>`.
 3. Confirmar con `php artisan puente:token-listar` que el token ya muestra «Último uso».
-4. Cambiar a `API_TOKEN_SIMULACION=obligatorio` en el `.env` y ejecutar `php artisan config:cache`.
+4. Cambiar a `API_TOKEN_SIMULACION=obligatorio` (y/o `API_TOKEN_CAPTURAS=obligatorio`) en el `.env` y ejecutar `php artisan config:cache`.
 
-Desde ese momento, cualquier cliente sin token recibe **401**. `POST /api/unity/imagenes` no cambia.
+Desde ese momento, cualquier cliente sin token recibe **401** en esas rutas. Antes del paso 4, todas las compilaciones de Unity que estén en uso (cada PC del equipo) deben tener el token configurado.
 
 **Reversa inmediata:** volver a `opcional` y ejecutar `php artisan config:cache`.
 

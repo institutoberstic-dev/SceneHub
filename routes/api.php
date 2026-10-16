@@ -12,12 +12,13 @@ use Illuminate\Support\Facades\Route;
 // Cada grupo tiene su cobertura de token (config/api_tokens.php). En modo «opcional» responde
 // igual que antes sin token; en modo «obligatorio» (API_TOKEN_* en .env) exige un token de esa cobertura:
 // php artisan puente:token-crear "<nombre>" --alcance=emociones|simulacion
-Route::middleware('api.token:emociones')->group(function () {
+// El token único de la app Unity (cobertura «unity») vale en los tres grupos.
+Route::middleware('api.token:emociones,unity')->group(function () {
     Route::get('/emociones', [EmocionesController::class, 'publicIndex'])->name('emociones.data');
     Route::get('/emociones/{meeting}', [EmocionesController::class, 'publicDetail'])->whereNumber('meeting')->name('emociones.detail');
 });
 
-Route::middleware('api.token:simulacion')->group(function () {
+Route::middleware('api.token:simulacion,unity')->group(function () {
     Route::get('/escenarios/{escenario}/resultados', [EscenariosController::class, 'simulationResults'])->name('escenarios.results');
     Route::get('/escenarios/{escenario}/resultados-simulacion', [EscenariosController::class, 'simulationResults'])->name('escenarios.simulation');
     Route::get('/escenarios/{escenario}/simulacion', [DataVersionsController::class, 'simulation'])->name('datos.simulacion');
@@ -30,9 +31,12 @@ Route::middleware('api.token:simulacion')->group(function () {
     Route::get('/escenarios', [EscenariosController::class, 'data'])->name('escenarios.data');
 });
 
-// Public upload API for Unity: no authentication or CSRF. Stores images in
-// storage/app/public/unity/{escenario_id|general}/{YYYY-MM-DD}. Limited to 30 requests per minute per IP.
-Route::post('/unity/imagenes', [UnityImagenesController::class, 'store'])->middleware('throttle:30,1')->name('unity.imagenes.store');
+// Carga de capturas desde Unity, sin sesión ni CSRF. Guarda en
+// storage/app/public/unity/{escenario_id|general}/{AAAA-MM-DD}. Máximo 30 solicitudes por minuto por IP.
+// Cobertura «capturas» (o el token «unity»): en modo opcional acepta envíos sin token, como antes;
+// con API_TOKEN_CAPTURAS=obligatorio exige token.
+Route::post('/unity/imagenes', [UnityImagenesController::class, 'store'])
+    ->middleware(['throttle:30,1', 'api.token:capturas,unity'])->name('unity.imagenes.store');
 
 // --- API de SOLO LECTURA para la app de escritorio «Puente de datos» (ajuste 7 del encargo):
 // escenarios, catálogo, Excel original, manifiesto territorial y descarga de archivos.

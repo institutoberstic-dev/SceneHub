@@ -185,6 +185,54 @@ class ApiTokenCoberturaTest extends TestCase
             ->assertCreated()->assertJsonPath('ok', true);
     }
 
+    private function captura(): array
+    {
+        return ['imagen' => UploadedFile::fake()->createWithContent('captura.png', base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='))];
+    }
+
+    public function test_capturas_opcional_acepta_sin_token_y_valida_el_que_llega(): void
+    {
+        $this->post('/api/unity/imagenes', $this->captura())->assertCreated();
+        $this->con('puente_'.str_repeat('0', 64))->post('/api/unity/imagenes', $this->captura())->assertUnauthorized();
+        $this->flushHeaders();
+        $this->con($this->token('simulacion'))->post('/api/unity/imagenes', $this->captura())->assertForbidden();
+        $this->flushHeaders();
+        // Con su token, la carga (POST) sí se permite: «capturas» es la única cobertura con escritura.
+        $this->con($this->token('capturas'))->post('/api/unity/imagenes', $this->captura())->assertCreated()->assertJsonPath('ok', true);
+    }
+
+    public function test_capturas_obligatoria_exige_token_de_capturas_o_de_unity(): void
+    {
+        $this->modo('capturas', 'obligatorio');
+        $this->post('/api/unity/imagenes', $this->captura())->assertUnauthorized()->assertHeader('WWW-Authenticate', 'Bearer');
+        $this->con($this->token('emociones'))->post('/api/unity/imagenes', $this->captura())->assertForbidden();
+        $this->flushHeaders();
+        $this->con($this->token('capturas'))->post('/api/unity/imagenes', $this->captura())->assertCreated();
+        $this->flushHeaders();
+        $this->con($this->token('unity'))->post('/api/unity/imagenes', $this->captura())->assertCreated();
+        $this->flushHeaders();
+        // Un token de capturas no abre las APIs de lectura.
+        $this->modo('simulacion', 'obligatorio');
+        $this->con($this->token('capturas'))->getJson('/api/escenarios')->assertForbidden();
+    }
+
+    public function test_token_unity_vale_en_simulacion_emociones_y_capturas_pero_sigue_siendo_de_lectura_en_ellas(): void
+    {
+        $this->modo('simulacion', 'obligatorio');
+        $this->modo('emociones', 'obligatorio');
+        $this->modo('capturas', 'obligatorio');
+        $unity = $this->token('unity');
+        foreach ([...self::SIMULACION, ...self::EMOCIONES] as $ruta) {
+            $this->assertNotContains($this->con($unity)->getJson($ruta)->status(), [401, 403], $ruta);
+        }
+        $this->con($unity)->postJson('/api/escenarios')->assertStatus(405);
+        $this->con($unity)->getJson('/api/puente/catalogo')->assertForbidden();
+        $this->flushHeaders();
+        foreach (self::SIMULACION as $ruta) {
+            $this->getJson($ruta)->assertUnauthorized();
+        }
+    }
+
     public function test_comando_eliminar_tokens(): void
     {
         [$vigente, $claro] = PuenteToken::emitir('PC vigente', null, 'puente');
@@ -230,6 +278,8 @@ class ApiTokenCoberturaTest extends TestCase
         $this->assertMatchesRegularExpression('/simulacion\s*\|\s*opcional/', $salida);
         $this->assertMatchesRegularExpression('/emociones\s*\|\s*obligatorio/', $salida);
         $this->assertMatchesRegularExpression('/territorio\s*\|\s*obligatorio/', $salida);
+        $this->assertMatchesRegularExpression('/capturas\s*\|\s*opcional/', $salida);
+        $this->assertMatchesRegularExpression('/unity\s*\|\s*el de cada ruta/', $salida);
         $this->assertStringContainsString('Unity gemelo', $salida);
     }
 }

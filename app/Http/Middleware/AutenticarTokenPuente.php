@@ -14,8 +14,11 @@ use Symfony\Component\HttpFoundation\Response;
  *                                (/api/puente/catalogo, /api/puente/escenarios*).
  * - api.token:territorio,puente → acepta tokens de cualquiera de las coberturas listadas;
  *                                «territorio» es siempre obligatoria (/api/puente/territorio/*).
- * - api.token:<cobertura>      → «simulacion» o «emociones»; el modo (opcional u obligatorio)
- *                                sale de la configuración (.env).
+ * - api.token:<cobertura>,unity → «simulacion», «emociones» o «capturas», más el token único de
+ *                                la app Unity; el modo (opcional u obligatorio) es el de la primera
+ *                                cobertura y sale de la configuración (.env).
+ * Los tokens son de solo lectura, salvo en las rutas cuya primera cobertura tiene
+ * 'escritura' => true («capturas»: POST /api/unity/imagenes).
  *
  * En modo opcional, una solicitud SIN token pasa igual que antes (no rompe a Unity);
  * una solicitud CON token se valida siempre.
@@ -41,7 +44,7 @@ class AutenticarTokenPuente
         if (! collect($coberturas)->contains(fn (string $c) => $token->cubre($c))) {
             return response()->json(['message' => 'Este token no cubre esta API.'], 403);
         }
-        if (! $request->isMethodSafe()) {
+        if (! $request->isMethodSafe() && config("api_tokens.coberturas.{$coberturas[0]}.escritura") !== true) {
             return response()->json(['message' => 'Este token es de solo lectura.'], 405);
         }
         if (! $token->ultimo_uso_en || $token->ultimo_uso_en->lt(now()->subMinute())) {

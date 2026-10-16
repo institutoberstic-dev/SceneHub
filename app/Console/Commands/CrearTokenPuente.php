@@ -9,10 +9,10 @@ class CrearTokenPuente extends Command
 {
     protected $signature = 'puente:token-crear
         {nombre : Nombre del equipo o uso, p. ej. "PC del proyecto" o "Unity gemelo"}
-        {--alcance=puente : Cobertura: puente (app de escritorio), territorio (paquetes del PT1), simulacion (Unity) o emociones}
+        {--alcance=puente : Cobertura: puente (app de escritorio), territorio (paquetes del PT1), simulacion, emociones, capturas (carga de imágenes) o unity (app Unity: las tres anteriores)}
         {--dias= : Días de vigencia (sin valor = no vence)}';
 
-    protected $description = 'Crea un token de SOLO LECTURA para una cobertura de la API. Se muestra una sola vez.';
+    protected $description = 'Crea un token para una cobertura de la API (solo lectura, salvo la carga de capturas). Se muestra una sola vez.';
 
     public function handle(): int
     {
@@ -30,7 +30,8 @@ class CrearTokenPuente extends Command
         }
         [$token, $claro] = PuenteToken::emitir(mb_substr($this->argument('nombre'), 0, 120), $dias ? (int) $dias : null, $cobertura);
 
-        $this->info("Token #{$token->id} «{$token->nombre}» creado (solo lectura, cobertura: {$cobertura}).");
+        $permiso = in_array($cobertura, ['capturas', 'unity'], true) ? 'lectura y carga de capturas' : 'solo lectura';
+        $this->info("Token #{$token->id} «{$token->nombre}» creado ({$permiso}, cobertura: {$cobertura}).");
         $this->line('Cobertura: '.config("api_tokens.coberturas.{$cobertura}.nombre"));
         $this->line('Cópielo ahora y guárdelo en el cliente (app, Unity…). No se volverá a mostrar:');
         $this->newLine();

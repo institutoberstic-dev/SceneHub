@@ -7,8 +7,9 @@ use Illuminate\Database\Eloquent\Model;
 use InvalidArgumentException;
 
 /**
- * Token de solo lectura para la API. Solo se guarda su SHA-256.
- * Cada token pertenece a una cobertura (config/api_tokens.php): puente, simulacion o emociones.
+ * Token para la API. Solo se guarda su SHA-256.
+ * Cada token pertenece a una cobertura (config/api_tokens.php): puente, territorio, simulacion,
+ * emociones, capturas o unity (la app Unity: simulación, emociones y capturas).
  */
 class PuenteToken extends Model
 {

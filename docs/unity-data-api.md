@@ -14,24 +14,25 @@ Las rutas públicas actuales están en `routes/api.php`:
 | GET `/api/escenarios/{escenario}/resultados-simulacion` | Resultados de simulación adaptados a las vistas del panel (alias: `/resultados`, `/resultados-solares`). |
 | GET `/api/escenarios/{escenario}/simulacion` | Descarga de resultados de simulación, admite `version` (alias histórico: `/solar`). |
 | GET `/api/escenarios/{escenario}/versiones-datos?tipo=simulacion` | Consulta de cambios y versiones (también acepta `tipo=solar`). |
-| POST `/api/unity/imagenes` | Carga libre de imágenes desde Unity (ver «Cargar imágenes desde Unity»). |
+| POST `/api/unity/imagenes` | Carga de imágenes desde Unity, con token de la cobertura `capturas` o `unity` (ver «Cargar imágenes desde Unity»). |
 
 Las APIs externas son de solo lectura, salvo `POST /api/unity/imagenes`, que solo guarda imágenes en el almacenamiento y no modifica resultados de simulación, datos emocionales ni escenarios. Las cargas de resultados y emocionales requieren sesión y permisos dentro del proyecto. El módulo Emociones guarda los archivos mediante la ruta privada `POST /emociones-data`; esta operación no se expone bajo `/api`. Usuarios y roles se consultan internamente mediante `/users-data` y `/roles-data`, con sesión y rol administrador; `/session-user` requiere sesión.
 
 ## Token de acceso (cobertura)
 
-Las rutas de esta guía se agrupan en dos **coberturas** de token de solo lectura (`config/api_tokens.php`):
+Las rutas de esta guía se agrupan en tres **coberturas** de token (`config/api_tokens.php`):
 
-| Cobertura | Rutas |
-| --- | --- |
-| `simulacion` | `/api/escenarios`, `/api/escenarios/{id}` y todas sus subrutas (`versiones-datos`, `simulacion`, `solar`, `resultados*`), `/api/tecnologias` |
-| `emociones` | `/api/emociones`, `/api/emociones/{meeting}` |
+| Cobertura | Rutas | Permiso |
+| --- | --- | --- |
+| `simulacion` | `/api/escenarios`, `/api/escenarios/{id}` y todas sus subrutas (`versiones-datos`, `simulacion`, `solar`, `resultados*`), `/api/tecnologias` | Solo lectura (GET) |
+| `emociones` | `/api/emociones`, `/api/emociones/{meeting}` | Solo lectura (GET) |
+| `capturas` | `POST /api/unity/imagenes` | Solo cargar imágenes |
 
-`POST /api/unity/imagenes` no cambia: sigue libre, con el límite de 30 solicitudes por minuto.
+Además existe la cobertura **`unity`**: un solo token para la app Unity que vale en las tres anteriores, para no manejar tres tokens. Sigue siendo de solo lectura en simulación y emociones, y no abre ninguna otra API (ni `/api/puente/*`).
 
 Los paquetes territoriales publicados (por ejemplo, la escena 3D `.glb` del PT1) están en `/api/puente/territorio/manifiesto` y `/api/puente/territorio/archivos/{id}`. Esas rutas siempre exigen un token de la cobertura `territorio` (`--alcance=territorio`). Ver `docs/puente-anh/CONTRATO_API.md`.
 
-Cada cobertura tiene un modo en el `.env` del servidor (`API_TOKEN_SIMULACION`, `API_TOKEN_EMOCIONES`):
+Cada cobertura tiene un modo en el `.env` del servidor (`API_TOKEN_SIMULACION`, `API_TOKEN_EMOCIONES`, `API_TOKEN_CAPTURAS`); el token `unity` usa el modo de la ruta a la que llama:
 
 - **`opcional`** (por defecto): las rutas responden sin token, igual que siempre. Si la solicitud trae token, el servidor lo valida (inválido, vencido o revocado: `401`; token de otra cobertura: `403`). Así cada cliente puede probar su token antes de que sea obligatorio.
 - **`obligatorio`**: sin un token válido de esa cobertura responde `401` con `{"message": "Token no válido, vencido o revocado."}`, incluso si el escenario no existe.
@@ -177,7 +178,11 @@ La descarga devuelve la serie completa para el JSON local; la paginación es vis
 
 ## Cargar imágenes desde Unity
 
-`POST /api/unity/imagenes` (multipart/form-data). API libre: no requiere sesión, permisos ni token CSRF. Limitada a 30 solicitudes por minuto por IP.
+`POST /api/unity/imagenes` (multipart/form-data). No requiere sesión, permisos ni token CSRF. Limitada a 30 solicitudes por minuto por IP.
+
+Token: cobertura `capturas` (o el token único `unity`) en la cabecera `Authorization: Bearer <token>`. Con `API_TOKEN_CAPTURAS=opcional` (por defecto) también acepta envíos sin token, como antes; con `obligatorio`, sin token responde `401` y con un token de otra cobertura `403`.
+
+Un `422` con «Envía al menos una imagen en el campo "imagen" o "imagenes[]"» significa que la solicitud llegó **sin archivo** en esos campos: revisar el nombre del campo, usar `WWWForm.AddBinaryData` y que el tamaño no supere `post_max_size` del servidor (si lo supera, PHP descarta todo el envío).
 
 | Campo | Obligatorio | Descripción |
 | --- | --- | --- |
@@ -210,7 +215,7 @@ Respuesta `201`:
 }
 ```
 
-Errores: `422` con `ok=false`, `mensaje` y `errores` (siempre JSON, aunque Unity no envíe `Accept`); `429` si se supera el límite de solicitudes; `500` si falla la escritura (no deja archivos a medias).
+Errores: `401` sin token o con token inválido (en modo obligatorio, o si se envía uno inválido); `403` con un token de otra cobertura; `422` con `ok=false`, `mensaje` y `errores` (siempre JSON, aunque Unity no envíe `Accept`); `429` si se supera el límite de solicitudes; `500` si falla la escritura (no deja archivos a medias).
 
 Ejemplo en Unity (C#):
 
@@ -223,6 +228,7 @@ IEnumerator SubirCaptura(Texture2D textura, int escenarioId)
 
     using var req = UnityWebRequest.Post(baseUrl + "/api/unity/imagenes", form);
     req.SetRequestHeader("Accept", "application/json");
+    req.SetRequestHeader("Authorization", "Bearer " + tokenApi);  // token «capturas» o «unity»; nunca en el código fuente
     yield return req.SendWebRequest();
 
     if (req.result == UnityWebRequest.Result.Success)
