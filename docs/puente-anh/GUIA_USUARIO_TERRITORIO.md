@@ -21,6 +21,8 @@ Separar los dos módulos permite que una persona suba y otra revise.
 3. **Revisar las validaciones** (pestaña «Validaciones»). Cada archivo se revisa al subirlo:
    - extensión, tamaño, firma real del contenido y huella SHA-256;
    - GeoPackage: tablas del estándar, capa, EPSG:9377, `hex_id` sin vacíos ni repetidos y conteo de 648 celdas (y 91 edificaciones en las huellas);
+   - tipo de geometría de cada capa (ANH IN-38, 5.1.4): todos los elementos con geometría y **un solo tipo** por capa (puntos, líneas o polígonos). Mezclar tipos es error; un tipo distinto del que espera el Puente de datos (malla y huellas: polígonos; cercas y corredores: líneas; copas y superficies: polígonos; infraestructura: puntos) es advertencia, salvo en la malla, donde es error;
+   - GeoJSON: debe declarar el sistema de referencia EPSG:9377 (`"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::9377"}}`). Sin esa declaración, la norma lo interpreta en WGS84, así que es error: mejor entregarlo como GeoPackage;
    - JSON válido con sus claves mínimas;
    - firma glTF 2.0 de la escena.
 

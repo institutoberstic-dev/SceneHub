@@ -8,6 +8,7 @@ use App\Models\EscenarioContenido;
 use App\Models\PaqueteTerritorial;
 use App\Models\PuenteToken;
 use App\Models\User;
+use App\Services\SimulationResultsImport;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -145,6 +146,22 @@ class PuenteApiTest extends TestCase
         ksort($unidades);
         ksort($esperadas);
         $this->assertSame($esperadas, $unidades);
+    }
+
+    public function test_catalogo_trae_la_misma_regla_que_aplica_la_carga_del_excel(): void
+    {
+        $variables = collect($this->conToken($this->token())->getJson('/api/puente/catalogo')->assertOk()->json('variables'))->keyBy('clave');
+        $columnas = (new \ReflectionClassConstant(SimulationResultsImport::class, 'COLUMNS'))->getValue();
+        unset($columnas['tiempo_minutos']);
+        $this->assertSame(array_keys($columnas), $variables->keys()->all());
+        foreach ($columnas as $clave => $columna) {
+            $variable = $variables[$clave];
+            $this->assertSame($columna['rule'], $variable['regla'], $clave);
+            $this->assertNotSame('', $variable['regla_validacion']);
+            $this->assertSame(str_starts_with($columna['rule'], 'cumulative'), $variable['es_acumulado'], $clave);
+            $this->assertNotSame('', $variable['fuente']);
+            $this->assertArrayHasKey('equivalencia_anh', $variable);
+        }
     }
 
     public function test_territorio_solo_expone_versiones_publicadas(): void

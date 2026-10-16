@@ -18,6 +18,20 @@ return [
     'capa_malla' => 'malla_hex_1ha_gee',
     'campo_hex' => 'hex_id',
 
+    // Tipo de geometría que el Puente de datos espera en cada capa (motor/contrato_datos.py,
+    // GEOMETRIA_POR_CAPA). Mezclar tipos en una capa siempre es error (ANH IN-38, 5.1.4);
+    // un tipo distinto del esperado es advertencia con confirmación, salvo en la malla.
+    // copas e infraestructura son supuestos hasta ver el PT1 real.
+    'geometria_esperada' => [
+        'malla_gpkg' => 'poligono',
+        'huellas' => 'poligono',
+        'cercas' => 'linea',
+        'copas' => 'poligono',
+        'superficies' => 'poligono',
+        'corredores' => 'linea',
+        'infraestructura' => 'punto',
+    ],
+
     // Conteos esperados: si no coinciden, es una advertencia que exige confirmación.
     'conteos' => [
         'celdas' => 648,

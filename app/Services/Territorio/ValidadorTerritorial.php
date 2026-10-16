@@ -138,6 +138,8 @@ class ValidadorTerritorial
                 return [...$resultados, $this->r('geojson.estructura', self::ERROR, 'Se esperaba un GeoJSON de tipo FeatureCollection.')];
             }
             $resultados[] = $this->r('geojson.estructura', self::OK, 'GeoJSON con '.count($datos['features']).' elementos.');
+            $resultados[] = $this->crsGeojson($datos);
+            $resultados = [...$resultados, ...$this->tiposGeometria($archivo->tipo, $this->contarGeometriasGeojson($datos['features']))];
             if ($archivo->tipo === 'huellas') {
                 $resultados[] = $this->conteo('huellas.conteo', 'Edificaciones', count($datos['features']), (int) config('territorio.conteos.edificaciones'));
             }
@@ -189,6 +191,13 @@ class ValidadorTerritorial
 
             $tabla = '"'.str_replace('"', '""', $capa).'"';
             $total = (int) $pdo->query("SELECT COUNT(*) FROM {$tabla}")->fetchColumn();
+
+            $consulta = $pdo->prepare('SELECT column_name, geometry_type_name FROM gpkg_geometry_columns WHERE table_name = ?');
+            $consulta->execute([$capa]);
+            [$columnaGeom, $tipoDeclarado] = $consulta->fetch(PDO::FETCH_NUM) ?: [null, null];
+            if ($columnaGeom) {
+                $resultados = [...$resultados, ...$this->tiposGeometria($archivo->tipo, $this->contarGeometriasGpkg($pdo, $tabla, (string) $columnaGeom), (string) $tipoDeclarado)];
+            }
             if ($esMalla) {
                 $campo = config('territorio.campo_hex');
                 $columnas = array_column($pdo->query("PRAGMA table_info({$tabla})")->fetchAll(PDO::FETCH_ASSOC), 'name');
@@ -218,5 +227,118 @@ class ValidadorTerritorial
         } finally {
             $pdo = null;
         }
+    }
+
+    /*
+     | Tipo de geometría (ANH-GCIT-IN-38, 5.1.4): una capa no puede mezclar puntos,
+     | líneas y polígonos, y cada elemento necesita su geometría, porque en la base
+     | entregable cada capa va a una tabla con una columna espacial homogénea y
+     | obligatoria. Solo se inspecciona: nada se corrige ni se reproyecta.
+     */
+
+    private const FAMILIAS = [1 => 'punto', 4 => 'punto', 2 => 'linea', 5 => 'linea', 3 => 'poligono', 6 => 'poligono', 7 => 'coleccion'];
+
+    private const NOMBRES_FAMILIA = ['punto' => 'puntos', 'linea' => 'líneas', 'poligono' => 'polígonos', 'coleccion' => 'colecciones de geometrías'];
+
+    /** @return array{familias: array<string, int>, nulas: int, ilegibles: int} */
+    private function contarGeometriasGpkg(PDO $pdo, string $tabla, string $columna): array
+    {
+        $conteo = ['familias' => [], 'nulas' => 0, 'ilegibles' => 0];
+        $campo = '"'.str_replace('"', '""', $columna).'"';
+        foreach ($pdo->query("SELECT {$campo} FROM {$tabla}", PDO::FETCH_NUM) as [$blob]) {
+            $familia = $blob === null ? null : $this->familiaGpkg((string) $blob);
+            match (true) {
+                $blob === null || $familia === 'vacia' => $conteo['nulas']++,
+                $familia === null => $conteo['ilegibles']++,
+                default => $conteo['familias'][$familia] = ($conteo['familias'][$familia] ?? 0) + 1,
+            };
+        }
+
+        return $conteo;
+    }
+
+    /** Familia de una geometría GeoPackage (encabezado GP + WKB), «vacia» o null si no se entiende. */
+    private function familiaGpkg(string $blob): ?string
+    {
+        if (strlen($blob) < 8 || substr($blob, 0, 2) !== 'GP') {
+            return null;
+        }
+        $banderas = ord($blob[3]);
+        if ($banderas & 0x10) {
+            return 'vacia';
+        }
+        $sobre = [0 => 0, 1 => 32, 2 => 48, 3 => 48, 4 => 64][($banderas >> 1) & 0x07] ?? null;
+        if ($sobre === null || strlen($blob) < 8 + $sobre + 5) {
+            return null;
+        }
+        $wkb = substr($blob, 8 + $sobre, 5);
+        $tipo = unpack(ord($wkb[0]) === 1 ? 'V' : 'N', substr($wkb, 1, 4))[1];
+
+        return self::FAMILIAS[($tipo & 0x0FFFFFFF) % 1000] ?? null;
+    }
+
+    /** @param  array<int, mixed>  $features
+     * @return array{familias: array<string, int>, nulas: int, ilegibles: int} */
+    private function contarGeometriasGeojson(array $features): array
+    {
+        $codigos = ['Point' => 1, 'MultiPoint' => 4, 'LineString' => 2, 'MultiLineString' => 5, 'Polygon' => 3, 'MultiPolygon' => 6, 'GeometryCollection' => 7];
+        $conteo = ['familias' => [], 'nulas' => 0, 'ilegibles' => 0];
+        foreach ($features as $feature) {
+            $tipo = is_array($feature) && is_array($feature['geometry'] ?? null) ? ($feature['geometry']['type'] ?? null) : null;
+            if (! is_array($feature) || ($feature['geometry'] ?? null) === null) {
+                $conteo['nulas']++;
+            } elseif (! isset($codigos[$tipo])) {
+                $conteo['ilegibles']++;
+            } else {
+                $familia = self::FAMILIAS[$codigos[$tipo]];
+                $conteo['familias'][$familia] = ($conteo['familias'][$familia] ?? 0) + 1;
+            }
+        }
+
+        return $conteo;
+    }
+
+    /** RFC 7946: un GeoJSON sin «crs» se interpreta en WGS84; el proyecto exige EPSG:9377. */
+    private function crsGeojson(array $datos): array
+    {
+        $esperado = (int) config('territorio.srid');
+        $nombre = data_get($datos, 'crs.properties.name');
+        $nombre = is_string($nombre) ? trim($nombre) : '';
+        if ($nombre === '') {
+            return $this->r('geojson.crs', self::ERROR, "El GeoJSON no declara sistema de referencia: por norma se interpreta en WGS84 (EPSG:4326) y el proyecto exige EPSG:{$esperado}. Expórtelo como GeoPackage o declare el «crs» EPSG:{$esperado}.");
+        }
+
+        return preg_match('/(^|[^0-9])'.$esperado.'$/', $nombre) === 1
+            ? $this->r('geojson.crs', self::OK, "Sistema de referencia EPSG:{$esperado}.")
+            : $this->r('geojson.crs', self::ERROR, "El GeoJSON está en «{$nombre}» y debe estar en EPSG:{$esperado}. SceneHub no reproyecta: corríjalo en el origen.");
+    }
+
+    /** @param  array{familias: array<string, int>, nulas: int, ilegibles: int}  $conteo */
+    private function tiposGeometria(string $tipoArchivo, array $conteo, string $declarado = ''): array
+    {
+        $resultados = [];
+        $familias = $conteo['familias'];
+        $texto = fn (array $f) => implode(', ', array_map(fn ($familia, $n) => "{$n} ".self::NOMBRES_FAMILIA[$familia], array_keys($f), $f));
+        if ($conteo['nulas'] || $conteo['ilegibles']) {
+            $resultados[] = $this->r('geometria.nulas', self::ERROR, trim(($conteo['nulas'] ? "{$conteo['nulas']} elementos sin geometría. " : '').($conteo['ilegibles'] ? "{$conteo['ilegibles']} geometrías que no se pudieron leer. " : '')).' En la base entregable la geometría es obligatoria: corríjalo en el origen.');
+        }
+        if (count($familias) > 1 || isset($familias['coleccion'])) {
+            return [...$resultados, $this->r('geometria.tipo', self::ERROR, 'La capa mezcla tipos de geometría ('.$texto($familias).'). Cada capa debe tener un solo tipo (ANH IN-38, 5.1.4): sepárela en una capa por tipo.')];
+        }
+        if (! $familias) {
+            return $resultados;
+        }
+        $familia = array_key_first($familias);
+        $esperada = config("territorio.geometria_esperada.{$tipoArchivo}");
+        $declaracion = $declarado !== '' ? " (declarada como {$declarado})" : '';
+        if ($esperada && $esperada !== $familia) {
+            $mensaje = 'La capa tiene '.$texto($familias).$declaracion.' y el Puente de datos espera '.self::NOMBRES_FAMILIA[$esperada].'. ';
+
+            return [...$resultados, $tipoArchivo === 'malla_gpkg'
+                ? $this->r('geometria.tipo', self::ERROR, $mensaje.'La malla debe ser de polígonos (hexágonos).')
+                : $this->r('geometria.tipo', self::ADVERTENCIA, $mensaje.'Si es correcto, confirme y avise para ajustar el contrato del Puente antes de cargar.', true)];
+        }
+
+        return [...$resultados, $this->r('geometria.tipo', self::OK, 'Un solo tipo de geometría: '.$texto($familias).$declaracion.'.')];
     }
 }

@@ -34,7 +34,7 @@ class TerritorioModuleTest extends TestCase
     }
 
     /** GeoPackage mínimo válido (tablas OGC + capa con hex_id) creado con PDO SQLite. */
-    public static function gpkg(int $filas = 648, int $srid = 9377, string $capa = 'malla_hex_1ha_gee', bool $repetir = false, string $campo = 'hex_id'): UploadedFile
+    public static function gpkg(int $filas = 648, int $srid = 9377, string $capa = 'malla_hex_1ha_gee', bool $repetir = false, string $campo = 'hex_id', array $geometrias = ['poligono']): UploadedFile
     {
         $ruta = tempnam(sys_get_temp_dir(), 'gpkg').'.gpkg';
         $pdo = new PDO('sqlite:'.$ruta);
@@ -43,14 +43,35 @@ class TerritorioModuleTest extends TestCase
         $pdo->exec('CREATE TABLE gpkg_geometry_columns (table_name TEXT, column_name TEXT, geometry_type_name TEXT, srs_id INTEGER, z TINYINT, m TINYINT)');
         $pdo->exec("CREATE TABLE \"{$capa}\" (fid INTEGER PRIMARY KEY, geom BLOB, \"{$campo}\" INTEGER, indicador REAL)");
         $pdo->prepare("INSERT INTO gpkg_contents VALUES (?, 'features', ?, ?)")->execute([$capa, $capa, $srid]);
-        $pdo->prepare("INSERT INTO gpkg_geometry_columns VALUES (?, 'geom', 'POLYGON', ?, 0, 0)")->execute([$capa, $srid]);
-        $insert = $pdo->prepare("INSERT INTO \"{$capa}\" (geom, \"{$campo}\", indicador) VALUES (NULL, ?, ?)");
+        $declarado = count(array_unique($geometrias)) === 1 ? ['punto' => 'POINT', 'linea' => 'LINESTRING', 'poligono' => 'POLYGON', null => 'GEOMETRY'][$geometrias[0]] : 'GEOMETRY';
+        $pdo->prepare("INSERT INTO gpkg_geometry_columns VALUES (?, 'geom', ?, ?, 0, 0)")->execute([$capa, $declarado, $srid]);
+        $insert = $pdo->prepare("INSERT INTO \"{$capa}\" (geom, \"{$campo}\", indicador) VALUES (?, ?, ?)");
         for ($i = 1; $i <= $filas; $i++) {
-            $insert->execute([$repetir && $i === 2 ? 1 : $i, $i / 10]);
+            $insert->bindValue(1, self::geometriaGpkg($geometrias[($i - 1) % count($geometrias)], $srid, $i), PDO::PARAM_LOB);
+            $insert->bindValue(2, $repetir && $i === 2 ? 1 : $i);
+            $insert->bindValue(3, $i / 10);
+            $insert->execute();
         }
         $pdo = null;
 
         return new UploadedFile($ruta, 'energia_gee_malla_variables_v01_20260923.gpkg', 'application/geopackage+sqlite3', null, true);
+    }
+
+    /** Geometría GeoPackage (encabezado GP sin sobre + WKB little endian) cerca de La Paz en EPSG:9377; null = sin geometría. */
+    public static function geometriaGpkg(?string $familia, int $srid, int $i): ?string
+    {
+        if ($familia === null) {
+            return null;
+        }
+        [$x, $y] = [5064000 + ($i % 20) * 100, 2860000 + intdiv($i, 20) * 100];
+        $puntos = fn (array $p) => pack('V', count($p)).implode('', array_map(fn ($c) => pack('ee', ...$c), $p));
+        $wkb = match ($familia) {
+            'punto' => pack('CV', 1, 1).pack('ee', $x, $y),
+            'linea' => pack('CV', 1, 2).$puntos([[$x, $y], [$x + 50, $y + 50]]),
+            'poligono' => pack('CVV', 1, 3, 1).$puntos([[$x, $y], [$x + 50, $y], [$x + 50, $y + 50], [$x, $y]]),
+        };
+
+        return 'GP'.pack('CCV', 0, 1, $srid).$wkb;
     }
 
     public static function glb(bool $valido = true): UploadedFile
@@ -184,6 +205,82 @@ class TerritorioModuleTest extends TestCase
 
         // Con errores, «Validar» lo deja en borrador.
         $this->postJson("/territorio-paquetes/{$id}/validar")->assertOk()->assertJsonPath('data.estado', 'borrador');
+    }
+
+    public function test_tipo_de_geometria_y_sistema_de_referencia_de_las_capas(): void
+    {
+        $subidor = $this->usuario(['territorio.ver', 'territorio.subir']);
+        $id = $this->crearPaquete($subidor);
+        $reglas = fn () => ValidacionTerritorial::query()->where('paquete_id', $id)->where('archivo_id', PaqueteTerritorial::find($id)->archivos()->max('id'))->get()->mapWithKeys(fn ($v) => [$v->regla => $v->resultado]);
+        $this->actingAs($subidor);
+
+        // Malla correcta: polígonos, todos con geometría.
+        $this->subir($id, 'malla_gpkg', self::gpkg())->assertCreated();
+        $this->assertSame('ok', $reglas()['geometria.tipo']);
+        $this->assertArrayNotHasKey('geometria.nulas', $reglas()->all());
+
+        // Celdas sin geometría y malla de puntos: error.
+        $this->subir($id, 'malla_gpkg', self::gpkg(geometrias: ['poligono', null]))->assertCreated();
+        $this->assertSame('error', $reglas()['geometria.nulas']);
+        $this->subir($id, 'malla_gpkg', self::gpkg(geometrias: ['punto']))->assertCreated();
+        $this->assertSame('error', $reglas()['geometria.tipo']);
+
+        // Una capa que mezcla puntos y polígonos: error (IN-38 5.1.4).
+        $this->subir($id, 'cercas', self::gpkg(6, 9377, 'cercas', geometrias: ['linea', 'punto']))->assertCreated();
+        $this->assertSame('error', $reglas()['geometria.tipo']);
+
+        // Un solo tipo, pero distinto del esperado: advertencia que exige confirmación.
+        $this->subir($id, 'cercas', self::gpkg(6, 9377, 'cercas', geometrias: ['poligono']))->assertCreated();
+        $this->assertSame('advertencia', $reglas()['geometria.tipo']);
+        $this->subir($id, 'cercas', self::gpkg(6, 9377, 'cercas', geometrias: ['linea']))->assertCreated();
+        $this->assertSame('ok', $reglas()['geometria.tipo']);
+
+        // GeoJSON: sin «crs» se interpreta en WGS84 → error; con EPSG:9377 y polígonos → correcto.
+        $poligono = ['type' => 'Feature', 'properties' => ['id' => 1], 'geometry' => ['type' => 'Polygon', 'coordinates' => [[[5064000, 2860000], [5064050, 2860000], [5064050, 2860050], [5064000, 2860000]]]]];
+        $this->subir($id, 'superficies', self::archivoJson('superficies.geojson', ['type' => 'FeatureCollection', 'features' => [$poligono]]))->assertCreated();
+        $this->assertSame('error', $reglas()['geojson.crs']);
+        $crs = ['type' => 'name', 'properties' => ['name' => 'urn:ogc:def:crs:EPSG::9377']];
+        $this->subir($id, 'superficies', self::archivoJson('superficies.geojson', ['type' => 'FeatureCollection', 'crs' => $crs, 'features' => [$poligono]]))->assertCreated();
+        $this->assertSame('ok', $reglas()['geojson.crs']);
+        $this->assertSame('ok', $reglas()['geometria.tipo']);
+        $punto = ['type' => 'Feature', 'properties' => [], 'geometry' => ['type' => 'Point', 'coordinates' => [5064000, 2860000]]];
+        $this->subir($id, 'superficies', self::archivoJson('superficies.geojson', ['type' => 'FeatureCollection', 'crs' => $crs, 'features' => [$poligono, $punto, ['type' => 'Feature', 'geometry' => null]]]))->assertCreated();
+        $this->assertSame('error', $reglas()['geometria.tipo']);
+        $this->assertSame('error', $reglas()['geometria.nulas']);
+    }
+
+    public function test_lee_geometrias_con_sobre_big_endian_y_codigos_iso(): void
+    {
+        $subidor = $this->usuario(['territorio.ver', 'territorio.subir']);
+        $id = $this->crearPaquete($subidor);
+        $reglas = fn () => ValidacionTerritorial::query()->where('paquete_id', $id)->where('archivo_id', PaqueteTerritorial::find($id)->archivos()->max('id'))->get()->mapWithKeys(fn ($v) => [$v->regla => $v->resultado]);
+        $this->actingAs($subidor);
+        // Encabezado GP: banderas = (código de sobre << 1) | orden de bytes (1 = little endian).
+        $blob = fn (int $sobre, bool $little, int $tipo) => 'GP'.pack('CC', 0, ($sobre << 1) | ($little ? 1 : 0)).pack($little ? 'V' : 'N', 9377)
+            .str_repeat("\0", [0 => 0, 1 => 32, 2 => 48, 4 => 64][$sobre])
+            .pack('C', $little ? 1 : 0).pack($little ? 'V' : 'N', $tipo).str_repeat("\0", 16);
+        $con = function (array $blobs) {
+            $archivo = self::gpkg(count($blobs), 9377, 'superficies');
+            $pdo = new PDO('sqlite:'.$archivo->getPathname());
+            foreach ($blobs as $i => $contenido) {
+                $consulta = $pdo->prepare('UPDATE "superficies" SET geom = ? WHERE fid = ?');
+                $consulta->bindValue(1, $contenido, PDO::PARAM_LOB);
+                $consulta->bindValue(2, $i + 1);
+                $consulta->execute();
+            }
+            $pdo = null;
+
+            return $archivo;
+        };
+
+        // Polígono Z ISO (1003) big endian con sobre de 32 bytes, multipolígono con sobre de 48 y polígono con sobre de 64.
+        $this->subir($id, 'superficies', $con([$blob(1, false, 1003), $blob(2, true, 6), $blob(4, true, 3)]))->assertCreated();
+        $this->assertSame('ok', $reglas()['geometria.tipo']);
+        $this->assertArrayNotHasKey('geometria.nulas', $reglas()->all());
+
+        // Un punto M (2001) big endian entre polígonos: mezcla de tipos.
+        $this->subir($id, 'superficies', $con([$blob(0, false, 2001), $blob(1, true, 3)]))->assertCreated();
+        $this->assertSame('error', $reglas()['geometria.tipo']);
     }
 
     public function test_conteo_inesperado_exige_confirmacion_antes_de_publicar(): void
